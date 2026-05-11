@@ -1,0 +1,97 @@
+# .NET build output
+bin/
+obj/
+out/
+publish/
+*.user
+*.suo
+*.userprefs
+*.pidb
+*.cache
+
+# .NET CLI / NuGet
+*.nupkg
+*.snupkg
+.nuget/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+**/Properties/launchSettings.local.json
+
+# .NET test
+TestResults/
+coverage*.xml
+coverage*.json
+coverage*.info
+*.coverage
+*.coveragexml
+.coverlet/
+*.trx
+BenchmarkDotNet.Artifacts/
+
+# Rider / ReSharper
+.idea/
+*.DotSettings.user
+_ReSharper.Caches/
+_ReSharper*/
+
+# Visual Studio
+.vs/
+*.vsidx
+*.vspx
+*.sap
+*.psess
+.vsconfig
+*.opendb
+*.VC.db
+*.VC.opendb
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# Rider
+*.sln.iml
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+secrets.json
+*.pfx
+*.p12
+
+# EF Core
+*.mdf
+*.ldf
+*.ndf
+
+# Docker
+docker-compose.override.yml
+
+# Backup / temp
+*.bak
+*.tmp
+*.swp
+*~
+
+# Coverage tools
+.sonarqube/
+StyleCopReport.xml
+
+# Claude Code / superpowers working dirs
+.claude/local/
+docs/superpowers/
