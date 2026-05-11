@@ -208,13 +208,12 @@ rules:
 ```yaml
 rules:
   - id: <APP>-no-empty-catch
-    pattern: |
-      catch
-      {
-      }
+    # Bare `catch { }` (no type) does not round-trip through the C# AST parser,
+    # so we use a regex pattern. The typed variant (next rule) uses the AST.
+    pattern-regex: 'catch\s*\{\s*\}'
     paths:
       include: ["src/**/*.cs"]
-    message: "Empty catch swallows failures. Surface or log with context."
+    message: "Empty bare catch swallows failures. Surface or log with context."
     severity: ERROR
     languages: [csharp]
     metadata:
@@ -295,12 +294,17 @@ rules:
       violation: Leaky Narrative
 
   - id: <APP>-no-service-locator
-    pattern: |
-      public $C(IServiceProvider $X) { ... }
+    # Constructor-parameter pattern doesn't parse in semgrep C#; flag the
+    # runtime resolution call instead (which is the actual smell).
+    pattern-either:
+      - pattern: $SP.GetRequiredService<$T>()
+      - pattern: $SP.GetService<$T>()
     paths:
       include: ["src/**/*.cs"]
-      exclude: ["src/<App>.Api/Program.cs"]
-    message: "Injecting IServiceProvider is Service Locator anti-pattern."
+      exclude:
+        - "src/<App>.Api/Program.cs"
+        - "src/<App>.Service/Program.cs"
+    message: "Resolving services from IServiceProvider at runtime is the Service Locator anti-pattern. Inject concrete dependencies via constructor."
     severity: WARNING
     languages: [csharp]
     metadata:
@@ -459,20 +463,13 @@ rules:
       violation: Leaky Narrative
 
   - id: <APP>-persistence-no-public-connection
-    pattern-either:
-      - pattern: public IDbConnection $X { get; }
-      - pattern: public NpgsqlConnection $X { get; }
-      - pattern: public DbConnection $X { get; }
-      - pattern: |
-          public IDbConnection $M(...) { ... }
-      - pattern: |
-          public NpgsqlConnection $M(...) { ... }
-      - pattern: |
-          public DbConnection $M(...) { ... }
+    # Auto-property patterns do not parse in semgrep C#; use a regex that
+    # matches both `public IDbConnection X { get; ... }` and method returns.
+    pattern-regex: 'public\s+(IDbConnection|NpgsqlConnection|DbConnection)\s+\w+\s*(\{\s*get\s*;|\([^)]*\))'
     paths:
       include:
         - "src/<App>.Persistence/**/*.cs"
-    message: "Connection types must not leak through the repository public API. Connections stay private."
+    message: "Connection types must not leak through the repository public API as property or method return type. Connections stay private."
     severity: ERROR
     languages: [csharp]
     metadata:
