@@ -1,3 +1,6 @@
 .DS_Store
 *.env
 *.local
+
+# superpowers working dirs (specs, plans, etc.)
+docs/superpowers/
