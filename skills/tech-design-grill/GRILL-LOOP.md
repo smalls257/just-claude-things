@@ -22,13 +22,21 @@ This is the shared interrogation pattern used by all `*-grill` skills.
    > What happens to the shipped line, the refund, and the order status?"*
    If the user answers in generalities, restate the scenario more concretely
    until the answer is unambiguous.
-8. **Cross-reference with code.** Brownfield only. When the user states how
-   something works, check whether the code agrees. If you find a contradiction,
-   surface it immediately — do not paper over:
-   > *"You said cancellation is partial, but `OrderService.Cancel` deletes the
-   > whole order. Which is the source of truth — your intent, or the code?"*
-   Resolution is one of: (a) intent wins, code is wrong → log as work; (b) code
-   wins, intent was stale → update the doc; (c) both wrong → open `OQ-XXX`.
+8. **Cross-reference with what's known.** Check the user's current statement
+   against, in order:
+   (a) **the requirements doc** — every `FR-XXX` is settled fact. If a design
+       choice contradicts an FR, surface it: *"FR-012 says cancellation is
+       partial. Your proposed `Cancel(orderId)` endpoint can't express that."*
+   (b) **this conversation** — earlier design decisions stay in force unless
+       explicitly revisited. *"You said the saga owns refunds. Now you're
+       putting refund logic in the order aggregate."*
+   (c) **codebase, if it exists** — brownfield only. *"You said the new
+       service owns inventory, but `InventoryService` already lives in the
+       monolith. Are we extracting or duplicating?"*
+   Resolution is one of: (i) latest intent wins → log prior as superseded
+   or open `D-XXX` if reversal needs traceability; (ii) prior wins → correct
+   the current statement; (iii) genuine open question → `OQ-XXX` (carries to
+   later sessions) or `D-XXX` (deferred this session).
 
 ## Walking the decision tree
 

@@ -22,13 +22,19 @@ This is the shared interrogation pattern used by all `*-grill` skills.
    > What happens to the shipped line, the refund, and the order status?"*
    If the user answers in generalities, restate the scenario more concretely
    until the answer is unambiguous.
-8. **Cross-reference with code.** Brownfield only. When the user states how
-   something works, check whether the code agrees. If you find a contradiction,
-   surface it immediately — do not paper over:
-   > *"You said cancellation is partial, but `OrderService.Cancel` deletes the
-   > whole order. Which is the source of truth — your intent, or the code?"*
-   Resolution is one of: (a) intent wins, code is wrong → log as work; (b) code
-   wins, intent was stale → update the doc; (c) both wrong → open `OQ-XXX`.
+8. **Cross-reference with what's known.** Requirements often run greenfield —
+   no code yet. Cross-check the user's current statement against, in order:
+   (a) **this conversation** — did the user already commit to something
+       incompatible earlier? *"Five minutes ago you said cancellations were
+       always full. Now you're describing partial. Which holds?"*
+   (b) **existing docs** — `CONTEXT.md`, prior `docs/requirements/*`, pasted
+       PRDs. Surface conflict the same way: *"The pasted epic says X. You're
+       now describing Y."*
+   (c) **codebase, if it exists** — brownfield only. *"You said cancellation
+       is partial, but `OrderService.Cancel` deletes the whole order."*
+   Resolution is one of: (i) latest intent wins → log prior as superseded;
+   (ii) prior wins → correct the current statement; (iii) genuine open
+   question → `OQ-XXX` with both options recorded.
 
 ## Walking the decision tree
 
