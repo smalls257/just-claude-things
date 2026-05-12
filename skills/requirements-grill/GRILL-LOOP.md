@@ -16,7 +16,19 @@ This is the shared interrogation pattern used by all `*-grill` skills.
 6. **Sharpen fuzzy language.** When a vague term appears, propose a canonical
    replacement: *"You're saying 'account' — Customer or User?"*
 7. **Probe with concrete scenarios.** When relationships are stated abstractly,
-   invent specific scenarios that force precision about boundaries.
+   invent specific scenarios that force precision about boundaries. Pick edge
+   cases, not happy paths — the boundary is where ambiguity lives.
+   > *"A customer cancels an order with three line items, one already shipped.
+   > What happens to the shipped line, the refund, and the order status?"*
+   If the user answers in generalities, restate the scenario more concretely
+   until the answer is unambiguous.
+8. **Cross-reference with code.** Brownfield only. When the user states how
+   something works, check whether the code agrees. If you find a contradiction,
+   surface it immediately — do not paper over:
+   > *"You said cancellation is partial, but `OrderService.Cancel` deletes the
+   > whole order. Which is the source of truth — your intent, or the code?"*
+   Resolution is one of: (a) intent wins, code is wrong → log as work; (b) code
+   wins, intent was stale → update the doc; (c) both wrong → open `OQ-XXX`.
 
 ## Walking the decision tree
 
