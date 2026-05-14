@@ -36,17 +36,27 @@ cleanup_repo() {
 }
 
 # Place a stub tool at .tools/<name> that simulates pass/fail with optional output.
+# Output is stored in a sidecar file (.tools/<name>.out) and emitted verbatim by the
+# stub at run time — avoids heredoc interpolation pitfalls with $, `, \, quotes.
 # Usage: install_stub_tool <name> [exit_code=0] [output=""]
 install_stub_tool() {
   local name="$1"
   local exit_code="${2:-0}"
   local output="${3:-}"
   mkdir -p "$REPO/.tools" || { echo "failed to mkdir .tools" >&2; return 1; }
-  cat > "$REPO/.tools/$name" <<EOF
+  # Sidecar holds the literal output bytes; stub cats it at runtime.
+  if [ -n "$output" ]; then
+    printf '%s\n' "$output" > "$REPO/.tools/$name.out"
+  else
+    : > "$REPO/.tools/$name.out"
+  fi
+  cat > "$REPO/.tools/$name" <<'STUB_EOF'
 #!/usr/bin/env bash
-[ -n "${output}" ] && echo "${output}"
-exit ${exit_code}
-EOF
+[ -s "$0.out" ] && cat "$0.out"
+exit __EXIT_CODE__
+STUB_EOF
+  # Substitute exit code via sed (safe: integer only).
+  sed -i.bak "s/__EXIT_CODE__/${exit_code}/" "$REPO/.tools/$name" && rm -f "$REPO/.tools/$name.bak"
   chmod +x "$REPO/.tools/$name"
 }
 

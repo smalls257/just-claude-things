@@ -25,7 +25,7 @@ teardown() { cleanup_repo; }
   refute_output --partial "[FAIL 20-secrets]"
 }
 
-@test "20-secrets self-skips when gitleaks missing" {
+@test "20-secrets reports missing tool when gitleaks absent" {
   cd "$REPO"
   rm -f "$REPO/.tools/gitleaks"
   echo "hello" > README.md
