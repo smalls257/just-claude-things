@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Tier: standard. Verify formatting (no rewrites). Stack-conditional.
+set -uo pipefail
+GATE="10-format"
+GATE_DIR="$(dirname "${BASH_SOURCE[0]}")"
+# shellcheck source=../_output.sh
+. "$(dirname "$GATE_DIR")/_output.sh"
+
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+
+# Stack detectors — bounded find, portable (no globstar required).
+has_dotnet() {
+  find "$REPO_ROOT" -maxdepth 3 \( -name '*.sln' -o -name '*.csproj' \) -print -quit 2>/dev/null | grep -q .
+}
+has_prettier() {
+  [ -f "$REPO_ROOT/package.json" ] && grep -q '"prettier"' "$REPO_ROOT/package.json"
+}
+has_ruff_format() {
+  [ -f "$REPO_ROOT/pyproject.toml" ] && grep -q 'ruff' "$REPO_ROOT/pyproject.toml"
+}
+
+ran=0
+
+if has_dotnet; then
+  ran=1
+  if ! command -v dotnet >/dev/null 2>&1; then
+    gate_missing_tool "$GATE" "dotnet" "Required for .NET format verification."
+    exit 2
+  fi
+  out=$(dotnet format --verify-no-changes --no-restore 2>&1)
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    printf '%s\n' "$out" | gate_fail_block "$GATE" "dotnet format"
+    echo "  Fix: run \`dotnet format\` to auto-apply, then stage and re-commit." >&2
+    exit 1
+  fi
+fi
+
+if has_prettier; then
+  ran=1
+  if ! command -v npx >/dev/null 2>&1; then
+    gate_missing_tool "$GATE" "npx" "Required for prettier verification."
+    exit 2
+  fi
+  out=$(npx prettier --check . 2>&1)
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    printf '%s\n' "$out" | gate_fail_block "$GATE" "prettier"
+    echo "  Fix: run \`npx prettier --write .\`." >&2
+    exit 1
+  fi
+fi
+
+if has_ruff_format; then
+  ran=1
+  if ! command -v ruff >/dev/null 2>&1; then
+    gate_missing_tool "$GATE" "ruff" "Required for python format verification."
+    exit 2
+  fi
+  out=$(ruff format --check 2>&1)
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    printf '%s\n' "$out" | gate_fail_block "$GATE" "ruff format"
+    echo "  Fix: run \`ruff format\` and re-commit." >&2
+    exit 1
+  fi
+fi
+
+# No applicable stack detected → self-skip (Infected Core avoidance).
+if [ $ran -eq 0 ]; then
+  exit 77
+fi
+exit 0
