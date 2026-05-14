@@ -5,7 +5,7 @@ load '../bats-helpers/assertions'
 setup() { new_repo; install_gates_template; }
 teardown() { cleanup_repo; }
 
-@test "20-secrets blocks when gitleaks reports a finding" {
+@test "20-secrets blocks staged AWS access key" {
   install_stub_tool "gitleaks" 1 "[FINDING] AWS key detected in config.env:1"
   cd "$REPO"
   echo "AWS_KEY=AKIAEXAMPLE" > config.env
@@ -15,7 +15,7 @@ teardown() { cleanup_repo; }
   assert_output --partial "[FAIL 20-secrets]"
 }
 
-@test "20-secrets passes when gitleaks exits clean" {
+@test "20-secrets passes clean repo" {
   install_stub_tool "gitleaks" 0
   cd "$REPO"
   echo "hello" > README.md
@@ -25,7 +25,7 @@ teardown() { cleanup_repo; }
   refute_output --partial "[FAIL 20-secrets]"
 }
 
-@test "20-secrets blocks with MISSING when gitleaks absent" {
+@test "20-secrets self-skips when gitleaks missing" {
   cd "$REPO"
   rm -f "$REPO/.tools/gitleaks"
   echo "hello" > README.md
