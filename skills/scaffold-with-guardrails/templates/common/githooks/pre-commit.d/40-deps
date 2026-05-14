@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Tier: critical. Trivy SCA — fail on HIGH+ findings.
+set -uo pipefail
+GATE="40-deps"
+GATE_DIR="$(dirname "${BASH_SOURCE[0]}")"
+# shellcheck source=../_output.sh
+. "$(dirname "$GATE_DIR")/_output.sh"
+
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+
+# grep exit 1 = zero matches = empty $manifests → self-skip below. Not a Silent Fallback.
+# Self-skip check runs before tool check: no point requiring trivy when nothing is staged.
+manifests=$(git diff --cached --name-only --diff-filter=ACM \
+            | grep -E '(package(-lock)?\.json|requirements\.txt|pyproject\.toml|go\.(mod|sum)|Cargo\.(toml|lock)|.*\.csproj|packages\.lock\.json)$' || true)
+if [ -z "$manifests" ]; then
+  exit 77
+fi
+
+TOOL="${REPO_ROOT}/.tools/trivy"
+[ -x "$TOOL" ] || TOOL="$(command -v trivy 2>/dev/null || true)"
+if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
+  gate_missing_tool "$GATE" "trivy" "Required for dep scanning."
+  exit 2
+fi
+
+out=$("$TOOL" fs --scanners vuln --severity HIGH,CRITICAL --quiet --exit-code 1 "$REPO_ROOT" 2>&1)
+code=$?
+if [ "$code" -ne 0 ]; then
+  # trivy exit-code 1 = findings (we set --exit-code 1); >1 = tool error
+  if [ "$code" -gt 1 ]; then
+    gate_tool_error "$GATE" "trivy" "$code" "$out"
+    exit 3
+  fi
+  printf '%s\n' "$out" | gate_fail_block "$GATE" "trivy"
+  echo "  Fix: upgrade vulnerable deps. If unavoidable, document in .trivyignore with CVE + reason." >&2
+  exit 1
+fi
+exit 0
