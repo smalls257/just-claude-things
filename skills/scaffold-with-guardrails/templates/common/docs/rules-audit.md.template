@@ -15,12 +15,12 @@ Run quarterly to catch drift.
 | Pack | Rule ID | Catches | Maps to |
 |------|---------|---------|---------|
 | owasp-top-ten | hardcoded-secret | embedded credentials | (covered by gitleaks; consider disabling here) |
-| csharp | empty-catch | empty `catch {}` | Silent Fallback (already custom in `.semgrep/bookworm/quality.yaml`) |
+| csharp | empty-catch | empty `catch {}` | Silent Fallback (already custom in `.semgrep/<app>/quality.yaml`) |
 | csharp | use-startswith-instead | string ops | Computational Friction (low-value; demote/disable?) |
 
 ## Overlap with custom rules
 
-List rules in vendored packs that are already covered by `.semgrep/bookworm/`.
+List rules in vendored packs that are already covered by `.semgrep/<app>/`.
 Disable the duplicate in the pack (via `--exclude-rule <id>`) to keep output clean.
 
 ## Promotion / demotion candidates

@@ -10,6 +10,6 @@ curl -sL "https://semgrep.dev/c/p/owasp-top-ten" -o owasp-top-ten.yaml
 curl -sL "https://semgrep.dev/c/p/csharp" -o csharp.yaml
 ```
 
-Scaffold copies these files to `<target-repo>/.semgrep/packs/`. Custom rules live in `<target-repo>/.semgrep/bookworm/` (already scaffolded by the .NET template).
+Scaffold copies these files to `<target-repo>/.semgrep/packs/`. Custom rules live in `<target-repo>/.semgrep/<app>/` (already scaffolded by the .NET template).
 
 Pack provenance + license summarised in `docs/rules-audit.md` (Task 27).

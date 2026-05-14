@@ -33,6 +33,7 @@ if ! ( set -o noclobber; : > "$GATES_LOCK" ) 2>/dev/null; then
   echo "[WARN] stale gates.lock taken over (age ${age}s > ${stale_threshold}s)" >&2
   : > "$GATES_LOCK"
 fi
+# Invariant: lock exists and is ours; install cleanup before any further work.
 trap 'rm -f "$GATES_LOCK"' EXIT
 
 skip_csv="${GATES_SKIP:-}"
