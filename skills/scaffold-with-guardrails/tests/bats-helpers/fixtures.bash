@@ -1,24 +1,25 @@
 # Test fixtures for bats gate tests.
 # Provides helpers for creating and managing temporary test repos.
 
+# shellcheck disable=SC2154
+_BATS_HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Create a fresh git repo in a temp dir. Sets $REPO.
 new_repo() {
   REPO="$(mktemp -d)"
-  pushd "$REPO" >/dev/null
-  git init -q -b main
-  git config user.email "test@example.com"
-  git config user.name "Test"
-  popd >/dev/null
+  git init -q -b main "$REPO"
+  git -C "$REPO" config user.email "test@example.com"
+  git -C "$REPO" config user.name "Test"
   export REPO
 }
 
 # Copy gate template tree into $REPO/.
 install_gates_template() {
-  local src="${BATS_TEST_DIRNAME}/../templates/common"
-  cp -R "$src/githooks" "$REPO/.githooks"
-  cp -R "$src/scripts" "$REPO/scripts"
-  cp "$src/gitconfig-gates" "$REPO/.gitconfig.gates"
-  cp "$src/gates.toml.example" "$REPO/.gates.toml"
+  local src="${_BATS_HELPERS_DIR}/../../templates/common"
+  cp -R "$src/githooks" "$REPO/.githooks" || { echo "failed to copy githooks" >&2; return 1; }
+  cp -R "$src/scripts" "$REPO/scripts" || { echo "failed to copy scripts" >&2; return 1; }
+  cp "$src/gitconfig-gates" "$REPO/.gitconfig.gates" || { echo "failed to copy gitconfig-gates" >&2; return 1; }
+  cp "$src/gates.toml.example" "$REPO/.gates.toml" || { echo "failed to copy gates.toml.example" >&2; return 1; }
   chmod +x "$REPO/.githooks/pre-commit" "$REPO/.githooks/pre-push" "$REPO/.githooks/commit-msg" 2>/dev/null || true
   chmod +x "$REPO"/.githooks/*.d/* 2>/dev/null || true
   chmod +x "$REPO"/scripts/*.sh 2>/dev/null || true
