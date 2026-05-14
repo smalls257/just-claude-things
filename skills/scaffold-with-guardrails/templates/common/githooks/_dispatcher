@@ -1,22 +1,30 @@
 # shellcheck shell=bash
 # Sourced by pre-commit / pre-push / commit-msg hooks.
 # Required env in caller: HOOK_NAME (e.g., "pre-commit"), HOOK_DIR (resolved).
+#
+# Contract:
+#   Source ONLY from a hook entrypoint (pre-commit, pre-push, commit-msg).
+#   Caller must set: HOOK_NAME (string), HOOK_DIR (absolute path to .d).
+#   Acquires gates.lock; concurrent invocations from the same repo block.
+#   Side effects: writes gates-last-run, appends gates-perf.log.
 
-set -uo pipefail
+set -euo pipefail
 
 GATES_LOG_DIR="$(git rev-parse --git-common-dir)"
 GATES_LAST_RUN="${GATES_LOG_DIR}/gates-last-run"
 GATES_PERF_LOG="${GATES_LOG_DIR}/gates-perf.log"
 GATES_LOCK="${GATES_LOG_DIR}/gates.lock"
 
-if [ -e "$GATES_LOCK" ]; then
-  age=$(( $(date +%s) - $(stat -f %m "$GATES_LOCK" 2>/dev/null || stat -c %Y "$GATES_LOCK") ))
+# Atomic lock acquire via noclobber. Stale window: 10 minutes.
+if ! ( set -o noclobber; : > "$GATES_LOCK" ) 2>/dev/null; then
+  age=$(( $(date +%s) - $(stat -f %m "$GATES_LOCK" 2>/dev/null || stat -c %Y "$GATES_LOCK" 2>/dev/null || echo 0) ))
   if [ "$age" -lt 600 ]; then
     echo "[BLOCK] Another gate run is in progress (lock: $GATES_LOCK). If stale, rm it." >&2
     exit 1
   fi
+  # Stale: take over.
+  : > "$GATES_LOCK"
 fi
-touch "$GATES_LOCK"
 trap 'rm -f "$GATES_LOCK"' EXIT
 
 skip_csv="${GATES_SKIP:-}"
@@ -47,6 +55,7 @@ for gate in "$HOOK_DIR"/[0-9]*; do
   fi
 
   start=$(date +%s)
+  # Dry-run: gates still execute (so they can report findings), but failures don't block.
   if [ "$dry_run" = "1" ]; then
     echo "DRY: would run $base"
     "$gate" || true
@@ -58,6 +67,7 @@ for gate in "$HOOK_DIR"/[0-9]*; do
       code=$?
       if [ "$code" -eq 77 ]; then
         echo "SKIP: $base (self-skip)"
+        SKIPPED+=("$name")
       else
         echo "[FAIL $base] exit $code" >&2
         FAILED+=("$name:$code")
