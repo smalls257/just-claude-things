@@ -9,6 +9,19 @@ gate_fail() {
     shift
   done
   echo "" >&2
+  return 1
+}
+
+# Like gate_fail but reads diagnostic lines from stdin (for piping linter output).
+# Usage: some_linter | gate_fail_block "$gate" "$tool"
+gate_fail_block() {
+  local gate="$1"; local tool="$2"
+  echo "[FAIL ${gate}] ${tool}" >&2
+  while IFS= read -r line; do
+    echo "  $line" >&2
+  done
+  echo "" >&2
+  return 1
 }
 
 gate_missing_tool() {
@@ -17,10 +30,12 @@ gate_missing_tool() {
   echo "" >&2
   echo "  ${hint}" >&2
   echo "" >&2
-  echo "  Run: ./scripts/bootstrap.sh" >&2
+  echo "  Run: ${GATES_BOOTSTRAP_CMD:-./scripts/bootstrap.sh}" >&2
   return 2
 }
 
+# Convention: gate basenames are NN-name (e.g., 30-static-analysis).
+# The glob ${var#[0-9]*-} strips the NN- prefix to recover "name" for GATES_SKIP=.
 gate_tool_error() {
   local gate="$1"; local tool="$2"; local code="$3"; shift 3
   echo "[ERROR ${gate}] ${tool} crashed" >&2
