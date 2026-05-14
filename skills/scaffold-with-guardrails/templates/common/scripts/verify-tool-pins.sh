@@ -10,7 +10,7 @@ if [ ! -f "$MANIFEST" ]; then
   exit 2
 fi
 
-if grep -q "REPLACE_ME" "$MANIFEST"; then
+if grep -qE '=[[:space:]]*"REPLACE_ME"' "$MANIFEST"; then
   echo "[STALE] manifest.toml contains REPLACE_ME placeholders." >&2
   echo "Run ./scripts/bootstrap.sh to populate checksums, then commit." >&2
   exit 1

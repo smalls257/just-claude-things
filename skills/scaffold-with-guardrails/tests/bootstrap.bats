@@ -13,7 +13,6 @@ teardown() { cleanup_repo; }
 }
 
 @test "tools/.gitignore ignores binaries but keeps manifest" {
-  cd "$REPO/.tools"
   # Initialize a tracking ref so check-ignore works.
   git -C "$REPO" add .tools/.gitignore .tools/manifest.toml 2>/dev/null || true
   run git -C "$REPO" check-ignore -q .tools/manifest.toml

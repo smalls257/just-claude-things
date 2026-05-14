@@ -1,6 +1,13 @@
 # Pinned tool versions. Checksums are placeholders — bootstrap fills via
 # verify-tool-pins.sh on first run; commit the resulting file.
 
+# Convention:
+#   - Canonical platform keys: sha256_{linux,darwin,windows}_{x86_64,arm64}
+#   - url_template placeholders ({version}, {os}, {arch}) are NAIVE — vendor
+#     release schemes diverge (gitleaks uses linux_x64, trivy uses Linux-64bit,
+#     scc uses x86_64-unknown-linux). bootstrap.sh maps canonical keys to
+#     vendor-specific URLs in fetch_tool(); don't trust naive substitution here.
+
 [gitleaks]
 version = "8.21.2"
 url_template = "https://github.com/gitleaks/gitleaks/releases/download/v{version}/gitleaks_{version}_{os}_{arch}.tar.gz"
