@@ -18,6 +18,7 @@ fi
 export SEMGREP_SEND_METRICS=off
 
 # Find changed source files in this commit. Self-skip if none.
+# grep exit 1 = zero matches = empty $files → self-skip below. Not a Silent Fallback.
 files=$(git diff --cached --name-only --diff-filter=ACM \
         | grep -E '\.(cs|py|ts|tsx|js|jsx|go|java)$' || true)
 if [ -z "$files" ]; then
@@ -34,12 +35,14 @@ out=$("$TOOL" scan \
     $files 2>&1)
 code=$?
 if [ "$code" -ne 0 ]; then
-  if [ "$code" -eq 2 ]; then
-    gate_tool_error "$GATE" "semgrep" "$code" "$out"
-    exit 3
+  # semgrep exit codes: 0 ok, 1 findings, 2 config error, 3+ tool error (crash/invalid pattern/etc).
+  # Route findings to gate_fail; everything else to gate_tool_error so crashes don't look like findings.
+  if [ "$code" -eq 1 ]; then
+    printf '%s\n' "$out" | gate_fail_block "$GATE" "semgrep"
+    echo "  Fix: edit listed files, or waive with \`// nosemgrep: <rule-id> -- <reason>\`." >&2
+    exit 1
   fi
-  printf '%s\n' "$out" | gate_fail_block "$GATE" "semgrep"
-  echo "  Fix: edit listed files, or waive with \`// nosemgrep: <rule-id> -- <reason>\`." >&2
-  exit 1
+  gate_tool_error "$GATE" "semgrep" "$code" "$out"
+  exit 3
 fi
 exit 0

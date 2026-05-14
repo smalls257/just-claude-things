@@ -18,6 +18,8 @@ EOF
   : > "$REPO/.env-log"
   echo "foo" > a.cs
   git add a.cs
+  # Bare git commit (not 'run') — test implicitly asserts the commit succeeds.
+  # If 30-static-analysis (or any gate) blocks, bats aborts and the test fails loudly.
   git commit -m "test"
   run cat "$REPO/.env-log"
   assert_output --partial "SEMGREP_SEND_METRICS=off"
@@ -30,6 +32,7 @@ EOF
   echo "x" > NOTES.md
   git add NOTES.md
   run git commit -m "test"
+  assert_output --partial "SKIP: 30-static-analysis (self-skip)"   # gate ran and self-skipped
   refute_output --partial "[FAIL 30-static-analysis]"
 }
 
