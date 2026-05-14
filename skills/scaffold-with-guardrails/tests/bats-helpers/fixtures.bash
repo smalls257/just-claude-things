@@ -23,6 +23,9 @@ install_gates_template() {
   chmod +x "$REPO/.githooks/pre-commit" "$REPO/.githooks/pre-push" "$REPO/.githooks/commit-msg" 2>/dev/null || true
   chmod +x "$REPO"/.githooks/*.d/* 2>/dev/null || true
   chmod +x "$REPO"/scripts/*.sh 2>/dev/null || true
+  mkdir -p "$REPO/.tools" || { echo "failed to mkdir .tools" >&2; return 1; }
+  cp "$src/tools/manifest.toml.template" "$REPO/.tools/manifest.toml" || { echo "failed to copy manifest.toml" >&2; return 1; }
+  cp "$src/tools/gitignore-template" "$REPO/.tools/.gitignore" || { echo "failed to copy tools gitignore" >&2; return 1; }
   git -C "$REPO" config --local include.path ../.gitconfig.gates
 }
 

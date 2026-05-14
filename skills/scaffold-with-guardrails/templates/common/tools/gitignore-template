@@ -1,0 +1,5 @@
+# Pinned binaries — fetched by bootstrap, not tracked.
+*
+# Except the manifest, which IS the contract.
+!.gitignore
+!manifest.toml
