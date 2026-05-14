@@ -9,6 +9,7 @@ teardown() { cleanup_repo; }
   cd "$REPO"
   install_stub_tool "gitleaks" 0
   install_stub_tool "semgrep" 0
+  install_stub_tool "scc" 0
   install_stub_tool "lizard" 1 "src/big.cs:10: function bigFunc CCN=15"
   mkdir -p src
   echo "x" > src/big.cs
@@ -53,6 +54,7 @@ teardown() { cleanup_repo; }
   cd "$REPO"
   install_stub_tool "gitleaks" 0
   install_stub_tool "semgrep" 0
+  install_stub_tool "scc" 0
   install_stub_tool "lizard" 1 "src/big.cs:10: function bigFunc CCN=15"
   # Set profile=regulated via .gates.toml override
   cat > "$REPO/.gates.toml" <<'EOF'

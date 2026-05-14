@@ -15,6 +15,8 @@ exit 0
 EOF
   chmod +x "$REPO/.tools/semgrep"
   install_stub_tool "gitleaks" 0
+  install_stub_tool "lizard" 0
+  install_stub_tool "scc" 0
   : > "$REPO/.env-log"
   echo "foo" > a.cs
   git add a.cs
@@ -38,6 +40,9 @@ EOF
 
 @test "30-static-analysis blocks on findings" {
   cd "$REPO"
+  install_stub_tool "gitleaks" 0
+  install_stub_tool "lizard" 0
+  install_stub_tool "scc" 0
   install_stub_tool "semgrep" 1 "src/foo.cs:10: bookworm-no-empty-catch"
   mkdir -p src
   echo "x" > src/foo.cs

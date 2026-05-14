@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Tier: optional. Per-file LOC via scc.
+# Default in 'standard' profile: warn. In 'regulated' profile: fail.
+set -uo pipefail
+GATE="61-file-size"
+GATE_DIR="$(dirname "${BASH_SOURCE[0]}")"
+# shellcheck source=../_output.sh
+. "$(dirname "$GATE_DIR")/_output.sh"
+
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+
+# Applicability — staged source files. Self-skip before tool check (Infected Core).
+# grep exit 1 = zero matches = empty $files → self-skip. Not Silent Fallback.
+files=$(git diff --cached --name-only --diff-filter=ACM \
+        | grep -E '\.(cs|py|ts|tsx|js|jsx|go|java)$' || true)
+if [ -z "$files" ]; then
+  exit 77
+fi
+
+TOOL="${REPO_ROOT}/.tools/scc"
+[ -x "$TOOL" ] || TOOL="$(command -v scc 2>/dev/null || true)"
+if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
+  gate_missing_tool "$GATE" "scc" "Optional: file-size gate."
+  exit 2
+fi
+
+# Read profile + threshold from .gates.toml. Defaults: standard / 400 LOC.
+# Ad-hoc grep parsing here; T18 will replace with proper resolver.
+# Regex matches 60-complexity verbatim so T18 find-replace lands clean.
+profile=$(grep -E '^profile' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | sed 's/.*"\(.*\)".*/\1/' || true)
+[ -n "$profile" ] || profile="standard"
+max_loc=$(grep -E '^max_file_loc' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | awk -F= '{print $2}' | tr -d ' "' || true)
+[ -n "$max_loc" ] || max_loc=400
+
+# JSON parser routing. scc emits JSON; we filter to Code > max_loc.
+# Prefer jq (lightweight); fall back to python3. If neither present, MISSING.
+parser=""
+if command -v jq >/dev/null 2>&1; then
+  parser="jq"
+elif command -v python3 >/dev/null 2>&1; then
+  parser="python3"
+else
+  gate_missing_tool "$GATE" "jq" "Required to parse scc JSON output (or install python3)."
+  exit 2
+fi
+
+# Subshell cd to REPO_ROOT: hooks may run from a subdirectory.
+# Capture both stdout (JSON) and exit code; do NOT mask scc failures as self-skip.
+report=$( cd "$REPO_ROOT" && "$TOOL" --format json --no-cocomo --no-complexity . 2>&1 )
+code=$?
+if [ "$code" -ne 0 ]; then
+  gate_tool_error "$GATE" "scc" "$code" "$report"
+  exit 3
+fi
+
+if [ "$parser" = "jq" ]; then
+  violators=$(printf '%s' "$report" \
+    | jq -r --argjson mx "$max_loc" \
+        '.[].Files[]? | select(.Code > $mx) | "\(.Location): \(.Code) LOC (> \($mx))"' \
+        2>/dev/null)
+else
+  violators=$(printf '%s' "$report" | python3 -c '
+import sys, json
+data = json.load(sys.stdin)
+mx = int(sys.argv[1])
+for lang in data:
+    for f in lang.get("Files", []):
+        if f.get("Code", 0) > mx:
+            print(f"{f[\"Location\"]}: {f[\"Code\"]} LOC (> {mx})")
+' "$max_loc" 2>/dev/null)
+fi
+
+if [ -n "$violators" ]; then
+  if [ "$profile" = "regulated" ]; then
+    printf '%s\n' "$violators" | gate_fail_block "$GATE" "scc"
+    echo "  Fix: split files; one responsibility per file." >&2
+    exit 1
+  fi
+  printf '%s\n' "$violators" | gate_warn_block "$GATE" "scc"
+  echo "  Files this large are usually God Classes." >&2
+fi
+exit 0
