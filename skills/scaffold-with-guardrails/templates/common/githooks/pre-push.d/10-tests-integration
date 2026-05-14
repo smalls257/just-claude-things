@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Tier: critical. Stack-conditional integration test run.
+set -uo pipefail
+GATE="10-tests-integration"
+GATE_DIR="$(dirname "${BASH_SOURCE[0]}")"
+# shellcheck source=../_output.sh
+. "$(dirname "$GATE_DIR")/_output.sh"
+
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+
+has_dotnet_integration() {
+  find "$REPO_ROOT/tests" -maxdepth 4 -name '*.Tests.Integration.csproj' -print -quit 2>/dev/null | grep -q .
+}
+has_npm_integration() {
+  [ -f "$REPO_ROOT/package.json" ] && grep -q '"test:integration"' "$REPO_ROOT/package.json"
+}
+has_python_integration() {
+  [ -d "$REPO_ROOT/tests" ] && [ -f "$REPO_ROOT/pyproject.toml" ]
+}
+
+if has_dotnet_integration; then
+  if ! command -v dotnet >/dev/null 2>&1; then
+    gate_missing_tool "$GATE" "dotnet" "Required to run .NET integration tests."
+    exit 2
+  fi
+  out=$( cd "$REPO_ROOT" && dotnet test --filter "FullyQualifiedName~Tests.Integration" --nologo --no-restore --verbosity minimal 2>&1 )
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    printf '%s\n' "$out" | gate_fail_block "$GATE" "dotnet test (integration)"
+    echo "  Fix: address failing tests before pushing." >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+if has_npm_integration; then
+  if ! command -v npm >/dev/null 2>&1; then
+    gate_missing_tool "$GATE" "npm" "Required to run JS/TS integration tests."
+    exit 2
+  fi
+  out=$( cd "$REPO_ROOT" && npm run -s test:integration 2>&1 )
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    printf '%s\n' "$out" | gate_fail_block "$GATE" "npm test:integration"
+    echo "  Fix: address failing tests before pushing." >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+if has_python_integration; then
+  if ! command -v pytest >/dev/null 2>&1; then
+    gate_missing_tool "$GATE" "pytest" "Required to run Python integration tests."
+    exit 2
+  fi
+  out=$( cd "$REPO_ROOT" && pytest -q -m "integration" 2>&1 )
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    printf '%s\n' "$out" | gate_fail_block "$GATE" "pytest -m integration"
+    echo "  Fix: address failing tests before pushing." >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+exit 77
