@@ -44,10 +44,12 @@ teardown() { cleanup_repo; }
   if [ "$git_dir" != "/usr/bin" ] && [ "$git_dir" != "/bin" ]; then
     new_path="${new_path}:${git_dir}"
   fi
-  # Ensure we don't accidentally include the dotnet dir.
-  # If dotnet_dir isn't in new_path we're done. If it is, this test would need
-  # a different approach — but /opt/homebrew/bin is not in our minimal set.
   export PATH="$new_path"
+  # Hard-verify dotnet is off PATH before driving the test. Avoids silent false-passes
+  # if a future build env has dotnet outside our strip set.
+  if command -v dotnet >/dev/null 2>&1; then
+    skip "dotnet is still on PATH in this environment; cannot test MISSING path here"
+  fi
   echo '<Project Sdk="Microsoft.NET.Sdk"/>' > App.csproj
   git add App.csproj
   run git commit -m "test"
