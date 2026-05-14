@@ -34,3 +34,15 @@ cleanup_repo() {
     rm -rf "$REPO"
   fi
 }
+
+# Mirror the gate template tree from $REPO into a worktree directory.
+# Usage: mirror_gates_into_worktree "$WT"
+mirror_gates_into_worktree() {
+  local wt="$1"
+  cp -R "$REPO/.githooks" "$wt/.githooks" || { echo "failed to mirror .githooks" >&2; return 1; }
+  cp -R "$REPO/scripts"   "$wt/scripts"   || { echo "failed to mirror scripts" >&2; return 1; }
+  cp "$REPO/.gitconfig.gates" "$wt/.gitconfig.gates" || { echo "failed to mirror .gitconfig.gates" >&2; return 1; }
+  cp "$REPO/.gates.toml" "$wt/.gates.toml" || { echo "failed to mirror .gates.toml" >&2; return 1; }
+  chmod +x "$wt/scripts"/*.sh 2>/dev/null || true
+  chmod +x "$wt/.githooks"/{pre-commit,pre-push,commit-msg} 2>/dev/null || true
+}

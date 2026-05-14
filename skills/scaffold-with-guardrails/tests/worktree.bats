@@ -33,28 +33,26 @@ teardown() {
 @test "bootstrap in worktree writes config to common-dir, not worktree gitdir" {
   WT="$(mktemp -d)"; rm -rf "$WT"
   git -C "$REPO" worktree add "$WT" -b feature/test
-  # Mirror gate tree into worktree
-  cp -R "$REPO/.githooks" "$WT/.githooks"
-  cp -R "$REPO/scripts" "$WT/scripts"
-  cp "$REPO/.gitconfig.gates" "$WT/.gitconfig.gates"
-  cp "$REPO/.gates.toml" "$WT/.gates.toml"
-  chmod +x "$WT/scripts"/*.sh "$WT/.githooks"/{pre-commit,pre-push,commit-msg}
+  mirror_gates_into_worktree "$WT"
   run "$WT/scripts/bootstrap.sh" --offline
   assert_success
-  # include.path now set on the worktree gitdir
   run git -C "$WT" config --get include.path
   assert_output "../.gitconfig.gates"
+  # Bootstrap wrote --local config, which in a worktree lands on the common-dir config.
+  common_dir="$(git -C "$WT" rev-parse --git-common-dir)"
+  run grep -F "../.gitconfig.gates" "$common_dir/config"
+  assert_success
+  # The worktree's own gitdir does NOT have its own config file (default git behavior)
+  wt_gitdir="$(git -C "$WT" rev-parse --git-dir)"
+  [ ! -f "$wt_gitdir/config" ] || ! grep -q "include.path" "$wt_gitdir/config" || \
+    { echo "expected no worktree-local config OR no include.path in it; found one in $wt_gitdir/config" >&2; false; }
 }
 
 @test "dispatcher in worktree writes perf log to common-dir" {
   WT="$(mktemp -d)"; rm -rf "$WT"
   git -C "$REPO" worktree add "$WT" -b feature/test
-  cp -R "$REPO/.githooks" "$WT/.githooks"
-  cp -R "$REPO/scripts" "$WT/scripts"
-  cp "$REPO/.gitconfig.gates" "$WT/.gitconfig.gates"
-  cp "$REPO/.gates.toml" "$WT/.gates.toml"
+  mirror_gates_into_worktree "$WT"
   git -C "$WT" config --local include.path ../.gitconfig.gates
-  chmod +x "$WT/.githooks"/{pre-commit,pre-push,commit-msg}
   # Add a noop gate so dispatcher has something to run
   mkdir -p "$WT/.githooks/pre-commit.d"
   cat > "$WT/.githooks/pre-commit.d/05-noop" <<'EOF'
