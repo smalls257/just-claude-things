@@ -7,6 +7,12 @@
 #   Caller must set: HOOK_NAME (string), HOOK_DIR (absolute path to .d).
 #   Acquires gates.lock; concurrent invocations from the same repo block.
 #   Side effects: writes gates-last-run, appends gates-perf.log.
+#
+# gates-last-run schema (consumed by commit-msg.d/20-verified-trailer):
+#   HOOK=<pre-commit|pre-push|commit-msg>
+#   SKIPPED=<space-separated gate names, or empty>
+#   FAILED=<space-separated name:code pairs, or empty>
+#   DRY_RUN=<0|1>
 
 set -euo pipefail
 
