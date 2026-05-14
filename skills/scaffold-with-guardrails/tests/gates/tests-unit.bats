@@ -29,6 +29,23 @@ teardown() { cleanup_repo; }
   refute_output --partial "[FAIL 50-tests-unit]"
 }
 
+@test "50-tests-unit self-skips when pytest reports no tests collected (exit 5)" {
+  cd "$REPO"
+  install_stub_tool "gitleaks" 0
+  install_stub_tool "pytest" 5 "no tests collected"
+  export PATH="$REPO/.tools:$PATH"
+  mkdir -p tests
+  cat > pyproject.toml <<'EOF'
+[project]
+name = "demo"
+EOF
+  echo "# placeholder" > tests/dummy.py
+  git add tests/dummy.py pyproject.toml
+  run git commit -m "test"
+  assert_output --partial "SKIP: 50-tests-unit (self-skip)"
+  refute_output --partial "[FAIL 50-tests-unit]"
+}
+
 @test "50-tests-unit reports MISSING when dotnet absent and unit tests present" {
   cd "$REPO"
   install_stub_tool "gitleaks" 0

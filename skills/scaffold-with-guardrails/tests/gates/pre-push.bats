@@ -12,6 +12,21 @@ teardown() { cleanup_repo; }
   assert_output --partial "pre-push dispatcher reachable"
 }
 
+@test "pre-push: 10-tests-integration self-skips when pytest exit 5" {
+  cd "$REPO"
+  install_stub_tool "pytest" 5 "no tests collected"
+  export PATH="$REPO/.tools:$PATH"
+  mkdir -p tests
+  cat > pyproject.toml <<'EOF'
+[project]
+name = "demo"
+EOF
+  echo "# placeholder" > tests/dummy.py
+  # Run the pre-push hook directly (no remote needed)
+  run "$REPO/.githooks/pre-push"
+  assert_output --partial "SKIP: 10-tests-integration (self-skip)"
+}
+
 @test "pre-push runs 20-deps-deep and reports MISSING when trivy absent" {
   cd "$REPO"
   rm -f "$REPO/.tools/trivy"
