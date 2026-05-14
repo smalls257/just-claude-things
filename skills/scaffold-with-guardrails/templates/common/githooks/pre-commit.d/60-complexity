@@ -31,8 +31,8 @@ if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
 fi
 
 # Threshold parsing (parameters, not policy). Section-scoped via _profile.sh.
-max_ccn=$(resolve_setting "complexity" "max_ccn" "15")
-max_nloc=$(resolve_setting "complexity" "max_nloc" "80")
+max_ccn=$(resolve_setting "complexity" "max_ccn" "10")
+max_nloc=$(resolve_setting "complexity" "max_nloc" "60")
 
 # Unquoted $files is intentional: word-split filenames into args.
 # Subshell cd to REPO_ROOT: hooks may run from a subdirectory, but $files
