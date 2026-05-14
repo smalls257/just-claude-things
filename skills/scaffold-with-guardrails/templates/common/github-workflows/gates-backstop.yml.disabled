@@ -1,0 +1,29 @@
+# Rename to .yml to enable. Replays pre-PR gates in CI as a backstop.
+name: Gates Backstop
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Bootstrap gate tools
+        run: ./scripts/bootstrap.sh
+      - name: Replay gates over PR range
+        if: github.event_name == 'pull_request'
+        run: ./scripts/run-gates-ci.sh ${{ github.event.pull_request.base.sha }}..HEAD
+      - name: Audit bypass commits
+        if: github.event_name == 'pull_request'
+        run: |
+          range="${{ github.event.pull_request.base.sha }}..HEAD"
+          bypasses=$(git log --grep='Verified: no' --grep='Verified: partial' "$range" || true)
+          if [ -n "$bypasses" ]; then
+            echo "$bypasses"
+            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+            if ! echo "$labels" | grep -q 'unsafe-skip'; then
+              echo "PR contains bypassed commits without 'unsafe-skip' label. Failing."
+              exit 1
+            fi
+          fi
