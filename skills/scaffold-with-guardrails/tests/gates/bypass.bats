@@ -35,6 +35,8 @@ EOF
   # Start first commit in background; it will hold the lock for ~1s.
   ( git commit -m "a" ) &
   pid=$!
+  # 0.3s headroom: long enough for A's hook to acquire lock,
+  # short enough to land well before A's 1s gate finishes.
   sleep 0.3
   # Stage distinct content for B so it doesn't race A on the same index entry.
   git add b.txt
