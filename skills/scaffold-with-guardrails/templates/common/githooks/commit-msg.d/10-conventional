@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Tier: always. Warn-only — never blocks commit.
+set -uo pipefail
+GATE="10-conventional"
+GATE_DIR="$(dirname "${BASH_SOURCE[0]}")"
+# shellcheck source=../_output.sh
+. "$(dirname "$GATE_DIR")/_output.sh"
+
+msg_file="${COMMIT_MSG_FILE:?}"
+subject=$(head -1 "$msg_file")
+
+# Conventional commit regex: type(scope)?!?: subject
+if ! echo "$subject" | grep -qE '^(feat|fix|chore|docs|refactor|test|perf|build|ci|style|revert)(\([^)]+\))?!?: .+'; then
+  gate_warn "$GATE" "conventional-commits" \
+    "Subject: $subject" \
+    "Format: <type>(<scope>)?: <description>  e.g., feat(orders): support partial cancel"
+fi
+exit 0
