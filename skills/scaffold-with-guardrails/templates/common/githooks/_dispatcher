@@ -21,10 +21,11 @@ GATES_LAST_RUN="${GATES_LOG_DIR}/gates-last-run"
 GATES_PERF_LOG="${GATES_LOG_DIR}/gates-perf.log"
 GATES_LOCK="${GATES_LOG_DIR}/gates.lock"
 
-# Atomic lock acquire via noclobber. Stale window: 10 minutes.
+# Atomic lock acquire via noclobber. Stale window: GATES_LOCK_STALE_S seconds (default 600 = 10 min).
 if ! ( set -o noclobber; : > "$GATES_LOCK" ) 2>/dev/null; then
   age=$(( $(date +%s) - $(stat -f %m "$GATES_LOCK" 2>/dev/null || stat -c %Y "$GATES_LOCK" 2>/dev/null || echo 0) ))
-  if [ "$age" -lt 600 ]; then
+  stale_threshold="${GATES_LOCK_STALE_S:-600}"
+  if [ "$age" -lt "$stale_threshold" ]; then
     echo "[BLOCK] Another gate run is in progress (lock: $GATES_LOCK). If stale, rm it." >&2
     exit 1
   fi
