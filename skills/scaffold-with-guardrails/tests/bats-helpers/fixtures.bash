@@ -35,6 +35,21 @@ cleanup_repo() {
   fi
 }
 
+# Place a stub tool at .tools/<name> that simulates pass/fail with optional output.
+# Usage: install_stub_tool <name> [exit_code=0] [output=""]
+install_stub_tool() {
+  local name="$1"
+  local exit_code="${2:-0}"
+  local output="${3:-}"
+  mkdir -p "$REPO/.tools" || { echo "failed to mkdir .tools" >&2; return 1; }
+  cat > "$REPO/.tools/$name" <<EOF
+#!/usr/bin/env bash
+[ -n "${output}" ] && echo "${output}"
+exit ${exit_code}
+EOF
+  chmod +x "$REPO/.tools/$name"
+}
+
 # Mirror the gate template tree from $REPO into a worktree directory.
 # Usage: mirror_gates_into_worktree "$WT"
 mirror_gates_into_worktree() {

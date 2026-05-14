@@ -60,9 +60,10 @@ teardown() {
 exit 0
 EOF
   chmod +x "$WT/.githooks/pre-commit.d/05-noop"
+  # Skip real-tool gates: this test exercises dispatcher path resolution, not gates.
   echo "y" > "$WT/file.txt"
   git -C "$WT" add file.txt
-  run git -C "$WT" commit -m "worktree commit"
+  GATES_SKIP="secrets" run git -C "$WT" commit -m "worktree commit"
   assert_success
   # Perf log should land in the common-dir (the original repo's .git), not the worktree gitdir
   common_dir="$(git -C "$WT" rev-parse --git-common-dir)"
