@@ -30,11 +30,9 @@ if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
   exit 2
 fi
 
-# Threshold parsing (parameters, not policy — stays inline). Defaults: CCN 10 / NLOC 60.
-max_ccn=$(grep -E '^max_ccn' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | awk -F= '{print $2}' | tr -d ' "' || true)
-[ -n "$max_ccn" ] || max_ccn=10
-max_nloc=$(grep -E '^max_nloc' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | awk -F= '{print $2}' | tr -d ' "' || true)
-[ -n "$max_nloc" ] || max_nloc=60
+# Threshold parsing (parameters, not policy). Section-scoped via _profile.sh.
+max_ccn=$(resolve_setting "complexity" "max_ccn" "15")
+max_nloc=$(resolve_setting "complexity" "max_nloc" "80")
 
 # Unquoted $files is intentional: word-split filenames into args.
 # Subshell cd to REPO_ROOT: hooks may run from a subdirectory, but $files

@@ -30,9 +30,8 @@ if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
   exit 2
 fi
 
-# Threshold parsing (parameter, not policy — stays inline). Default: 400 LOC.
-max_loc=$(grep -E '^max_file_loc' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | awk -F= '{print $2}' | tr -d ' "' || true)
-[ -n "$max_loc" ] || max_loc=400
+# Threshold parsing (parameter, not policy). Section-scoped via _profile.sh.
+max_loc=$(resolve_setting "file_size" "max_file_loc" "400")
 
 # JSON parser routing. scc emits JSON; we filter to Code > max_loc.
 # Prefer jq (lightweight); fall back to python3. If neither present, MISSING.

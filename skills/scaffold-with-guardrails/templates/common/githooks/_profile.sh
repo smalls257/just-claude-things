@@ -65,3 +65,26 @@ resolve_tier() {
     *)                     echo "error" ;;
   esac
 }
+
+# resolve_setting <gate_name> <key> <default>
+# Reads "<key> = <value>" scoped to [gates.<gate_name>] in .gates.toml.
+# Strips surrounding quotes and whitespace. Returns default if absent.
+resolve_setting() {
+  local g="$1" key="$2" default="${3:-}"
+  local toml="${GATES_TOML:-${REPO_ROOT}/.gates.toml}"
+  [ -f "$toml" ] || { echo "$default"; return; }
+  local v
+  v=$(awk -v g="$g" -v k="$key" '
+    /^\[/ { in_section = 0 }
+    /^\[gates\./ { in_section = ($0 ~ "^\\[gates\\." g "\\]") }
+    in_section {
+      # Match "<key> = " at line start (after optional whitespace)
+      if (match($0, "^[ \t]*" k "[ \t]*=[ \t]*")) {
+        val = substr($0, RSTART + RLENGTH)
+        gsub(/^["[:space:]]+|["[:space:]]+$/, "", val)
+        print val; exit
+      }
+    }
+  ' "$toml")
+  echo "${v:-$default}"
+}

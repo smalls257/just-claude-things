@@ -30,6 +30,7 @@ if ! ( set -o noclobber; : > "$GATES_LOCK" ) 2>/dev/null; then
     exit 1
   fi
   # Stale: take over.
+  echo "[WARN] stale gates.lock taken over (age ${age}s > ${stale_threshold}s)" >&2
   : > "$GATES_LOCK"
 fi
 trap 'rm -f "$GATES_LOCK"' EXIT
