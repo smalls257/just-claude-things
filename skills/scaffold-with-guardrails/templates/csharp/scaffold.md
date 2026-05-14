@@ -162,6 +162,8 @@ cp "$SCAFFOLD/templates/common/tools/gitignore-template"     .tools/.gitignore
 cp -R "$SCAFFOLD/templates/common/semgrep-packs"        .semgrep/packs
 cp    "$SCAFFOLD/templates/common/docs/BYPASS-POLICY.md"      BYPASS-POLICY.md
 cp    "$SCAFFOLD/templates/common/docs/BRANCH-PROTECTION.md"  BRANCH-PROTECTION.md
+mkdir -p docs
+cp "$SCAFFOLD/templates/common/docs/rules-audit.md.template" docs/rules-audit.md
 mkdir -p .github/workflows
 cp "$SCAFFOLD/templates/common/github-workflows/gates-backstop.yml.disabled" .github/workflows/
 cp "$SCAFFOLD/templates/common/github-workflows/tools-pin-check.yml"          .github/workflows/
