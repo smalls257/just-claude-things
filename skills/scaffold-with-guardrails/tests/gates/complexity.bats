@@ -25,6 +25,7 @@ teardown() { cleanup_repo; }
   echo "x" > README.md
   git add README.md
   run git commit -m "test"
+  assert_success
   assert_output --partial "SKIP: 60-complexity (self-skip)"
   refute_output --partial "[WARN 60-complexity]"
   refute_output --partial "[FAIL 60-complexity]"

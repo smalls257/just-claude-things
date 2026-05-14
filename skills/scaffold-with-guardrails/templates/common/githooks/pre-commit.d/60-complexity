@@ -34,8 +34,10 @@ max_nloc=$(grep -E '^max_nloc' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | 
 [ -n "$max_nloc" ] || max_nloc=60
 
 # Unquoted $files is intentional: word-split filenames into args.
+# Subshell cd to REPO_ROOT: hooks may run from a subdirectory, but $files
+# from `git diff --cached` is repo-relative.
 # shellcheck disable=SC2086
-out=$("$TOOL" --CCN "$max_ccn" --length "$max_nloc" $files 2>&1)
+out=$( cd "$REPO_ROOT" && "$TOOL" --CCN "$max_ccn" --length "$max_nloc" $files 2>&1 )
 code=$?
 if [ "$code" -ne 0 ]; then
   if [ "$profile" = "regulated" ]; then
