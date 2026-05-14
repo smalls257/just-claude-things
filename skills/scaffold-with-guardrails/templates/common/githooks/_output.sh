@@ -50,3 +50,24 @@ gate_tool_error() {
   echo "  Bypass (audited): GATES_SKIP=${gate#[0-9]*-} git commit" >&2
   return 3
 }
+
+# Warn-tier output. Does NOT fail the gate. Caller still controls exit code.
+gate_warn() {
+  local gate="$1"; local tool="$2"; shift 2
+  echo "[WARN ${gate}] ${tool}" >&2
+  while [ $# -gt 0 ]; do
+    echo "  $1" >&2
+    shift
+  done
+  echo "" >&2
+}
+
+# Like gate_warn but reads diagnostic lines from stdin.
+gate_warn_block() {
+  local gate="$1"; local tool="$2"
+  echo "[WARN ${gate}] ${tool}" >&2
+  while IFS= read -r line; do
+    echo "  $line" >&2
+  done
+  echo "" >&2
+}
