@@ -43,3 +43,26 @@ teardown() { cleanup_repo; }
   assert_success
   assert_output --partial "SKIP: 20-fail"
 }
+
+@test "dispatcher treats exit 77 as self-skip, continues" {
+  cat > "$REPO/.githooks/pre-commit.d/15-noop" <<'EOF'
+#!/usr/bin/env bash
+exit 77
+EOF
+  chmod +x "$REPO/.githooks/pre-commit.d/15-noop"
+  rm "$REPO/.githooks/pre-commit.d/20-fail"
+  echo "x" > "$REPO/file.txt"
+  git -C "$REPO" add file.txt
+  run git -C "$REPO" commit -m "test"
+  assert_success
+  assert_output --partial "SKIP: 15-noop (self-skip)"
+}
+
+@test "dispatcher emits perf log line per gate" {
+  echo "x" > "$REPO/file.txt"
+  git -C "$REPO" add file.txt
+  GATES_SKIP="fail" run git -C "$REPO" commit -m "test"
+  assert_success
+  run cat "$REPO/.git/gates-perf.log"
+  assert_output --partial "pre-commit 10-pass"
+}
