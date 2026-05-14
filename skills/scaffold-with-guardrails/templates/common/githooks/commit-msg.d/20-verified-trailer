@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Tier: always. Append "Verified: <yes|no|partial>" trailer to the commit message.
+# Reads gates-last-run written by the pre-commit dispatcher; decides verdict
+# from SKIPPED/FAILED contents. On amend, preserves any existing Verified: line
+# (does not recompute).
+set -uo pipefail
+GATE="20-verified-trailer"
+msg_file="${COMMIT_MSG_FILE:?}"
+
+GATES_LAST_RUN="$(git rev-parse --git-common-dir)/gates-last-run"
+
+verified="no"
+detail=""
+
+if [ -f "$GATES_LAST_RUN" ]; then
+  failed=$(grep -E '^FAILED=' "$GATES_LAST_RUN" | sed 's/^FAILED=//')
+  skipped=$(grep -E '^SKIPPED=' "$GATES_LAST_RUN" | sed 's/^SKIPPED=//')
+  if [ -n "$failed" ]; then
+    verified="no"
+    detail=" (failed: $failed)"
+  elif [ -n "$skipped" ]; then
+    verified="partial"
+    detail=" (skipped: ${skipped// /,})"
+  else
+    verified="yes"
+  fi
+fi
+
+# Avoid double-trailer on amend.
+if ! grep -q '^Verified:' "$msg_file"; then
+  if grep -q '^Co-Authored-By:' "$msg_file"; then
+    # Insert trailer directly above the first Co-Authored-By: line. The
+    # pre-existing blank line above Co-Authored-By: already separates the
+    # trailer paragraph from the body — do not emit an extra blank.
+    awk -v t="Verified: $verified$detail" '
+      /^Co-Authored-By:/ && !p { print t; p=1 }
+      { print }
+    ' "$msg_file" > "$msg_file.tmp" && mv "$msg_file.tmp" "$msg_file"
+  else
+    printf '\nVerified: %s%s\n' "$verified" "$detail" >> "$msg_file"
+  fi
+fi
+exit 0
