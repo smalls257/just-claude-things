@@ -5,6 +5,8 @@ load '../bats-helpers/assertions'
 @test "gates-backstop workflow is valid YAML with required jobs" {
   local wf="${BATS_TEST_DIRNAME}/../../templates/common/github-workflows/gates-backstop.yml.disabled"
   [ -f "$wf" ]
+  command -v python3 >/dev/null 2>&1 || skip "python3 not available"
+  python3 -c "import yaml" 2>/dev/null || skip "PyYAML not installed"
   python3 - "$wf" <<'PY'
 import sys, yaml
 with open(sys.argv[1]) as f:

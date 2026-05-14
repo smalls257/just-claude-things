@@ -40,6 +40,7 @@ for sha in $(git rev-list "$RANGE"); do
     fail=1
   fi
   git checkout --quiet -
-  git stash pop --quiet 2>/dev/null || true
+  # Don't mute stderr — pop conflicts must stay visible. Empty stash is safe.
+  git stash pop --quiet || echo "stash pop skipped (likely no stash or conflict)"
 done
 exit "$fail"
