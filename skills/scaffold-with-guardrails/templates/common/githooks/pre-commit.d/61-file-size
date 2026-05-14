@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Tier: optional. Per-file LOC via scc.
-# Default in 'standard' profile: warn. In 'regulated' profile: fail.
+# Tier resolved via _profile.sh (warn in standard, error in regulated, off in prototype).
 set -uo pipefail
 GATE="61-file-size"
 GATE_DIR="$(dirname "${BASH_SOURCE[0]}")"
 # shellcheck source=../_output.sh
 . "$(dirname "$GATE_DIR")/_output.sh"
+# shellcheck source=../_profile.sh
+. "$(dirname "$GATE_DIR")/_profile.sh"
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
 
@@ -17,6 +19,10 @@ if [ -z "$files" ]; then
   exit 77
 fi
 
+# Resolve tier policy via central resolver (replaces former in-gate grep).
+tier=$(resolve_tier "file_size" "optional")
+[ "$tier" = "off" ] && exit 77
+
 TOOL="${REPO_ROOT}/.tools/scc"
 [ -x "$TOOL" ] || TOOL="$(command -v scc 2>/dev/null || true)"
 if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
@@ -24,11 +30,7 @@ if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
   exit 2
 fi
 
-# Read profile + threshold from .gates.toml. Defaults: standard / 400 LOC.
-# Ad-hoc grep parsing here; T18 will replace with proper resolver.
-# Regex matches 60-complexity verbatim so T18 find-replace lands clean.
-profile=$(grep -E '^profile' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | sed 's/.*"\(.*\)".*/\1/' || true)
-[ -n "$profile" ] || profile="standard"
+# Threshold parsing (parameter, not policy — stays inline). Default: 400 LOC.
 max_loc=$(grep -E '^max_file_loc' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | awk -F= '{print $2}' | tr -d ' "' || true)
 [ -n "$max_loc" ] || max_loc=400
 
@@ -71,12 +73,17 @@ for lang in data:
 fi
 
 if [ -n "$violators" ]; then
-  if [ "$profile" = "regulated" ]; then
-    printf '%s\n' "$violators" | gate_fail_block "$GATE" "scc"
-    echo "  Fix: split files; one responsibility per file." >&2
-    exit 1
-  fi
-  printf '%s\n' "$violators" | gate_warn_block "$GATE" "scc"
-  echo "  Files this large are usually God Classes." >&2
+  case "$tier" in
+    error)
+      printf '%s\n' "$violators" | gate_fail_block "$GATE" "scc"
+      echo "  Fix: split files; one responsibility per file." >&2
+      exit 1
+      ;;
+    warn)
+      printf '%s\n' "$violators" | gate_warn_block "$GATE" "scc"
+      echo "  Files this large are usually God Classes." >&2
+      ;;
+    # 'off' was handled above with exit 77; should never reach here.
+  esac
 fi
 exit 0

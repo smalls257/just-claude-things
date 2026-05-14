@@ -69,3 +69,24 @@ EOF
   assert_failure
   assert_output --partial "[FAIL 60-complexity]"
 }
+
+@test "60-complexity respects enforce = off" {
+  cd "$REPO"
+  # Stub all transitive gates that fire on .cs source files so test isolates 60.
+  install_stub_tool "gitleaks" 0
+  install_stub_tool "semgrep" 0
+  install_stub_tool "scc" 0 '[]'
+  install_stub_tool "lizard" 1 "src/big.cs:10 CCN=99"
+  cat >> "$REPO/.gates.toml" <<'EOF'
+
+[gates.complexity]
+enforce = "off"
+EOF
+  mkdir -p src
+  echo "x" > src/big.cs
+  git add -A
+  run git commit -m "test"
+  assert_success
+  refute_output --partial "[WARN 60-complexity]"
+  refute_output --partial "[FAIL 60-complexity]"
+}

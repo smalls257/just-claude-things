@@ -70,3 +70,24 @@ EOF
   assert_failure
   assert_output --partial "[FAIL 61-file-size]"
 }
+
+@test "61-file-size respects enforce = off" {
+  cd "$REPO"
+  # Stub all transitive gates that fire on .cs source files so test isolates 61.
+  install_stub_tool "gitleaks" 0
+  install_stub_tool "semgrep" 0
+  install_stub_tool "lizard" 0
+  install_stub_tool "scc" 0 '[{"Files":[{"Location":"src/Huge.cs","Code":500}]}]'
+  cat >> "$REPO/.gates.toml" <<'EOF'
+
+[gates.file_size]
+enforce = "off"
+EOF
+  mkdir -p src
+  echo "x" > src/Huge.cs
+  git add -A
+  run git commit -m "test"
+  assert_success
+  refute_output --partial "[WARN 61-file-size]"
+  refute_output --partial "[FAIL 61-file-size]"
+}

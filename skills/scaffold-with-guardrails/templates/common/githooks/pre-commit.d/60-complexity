@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Tier: optional. Per-function cyclomatic complexity via lizard.
-# Default in 'standard' profile: warn. In 'regulated' profile: fail.
+# Tier resolved via _profile.sh (warn in standard, error in regulated, off in prototype).
 set -uo pipefail
 GATE="60-complexity"
 GATE_DIR="$(dirname "${BASH_SOURCE[0]}")"
 # shellcheck source=../_output.sh
 . "$(dirname "$GATE_DIR")/_output.sh"
+# shellcheck source=../_profile.sh
+. "$(dirname "$GATE_DIR")/_profile.sh"
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
 
@@ -17,6 +19,10 @@ if [ -z "$files" ]; then
   exit 77
 fi
 
+# Resolve tier policy via central resolver (replaces former in-gate grep).
+tier=$(resolve_tier "complexity" "optional")
+[ "$tier" = "off" ] && exit 77
+
 TOOL="${REPO_ROOT}/.tools/lizard"
 [ -x "$TOOL" ] || TOOL="$(command -v lizard 2>/dev/null || true)"
 if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
@@ -24,10 +30,7 @@ if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
   exit 2
 fi
 
-# Read profile + thresholds from .gates.toml. Defaults: standard / CCN 10 / NLOC 60.
-# Ad-hoc grep parsing here; T18 will replace with proper resolver.
-profile=$(grep -E '^profile' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | sed 's/.*"\(.*\)".*/\1/' || true)
-[ -n "$profile" ] || profile="standard"
+# Threshold parsing (parameters, not policy — stays inline). Defaults: CCN 10 / NLOC 60.
 max_ccn=$(grep -E '^max_ccn' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | awk -F= '{print $2}' | tr -d ' "' || true)
 [ -n "$max_ccn" ] || max_ccn=10
 max_nloc=$(grep -E '^max_nloc' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | awk -F= '{print $2}' | tr -d ' "' || true)
@@ -40,12 +43,17 @@ max_nloc=$(grep -E '^max_nloc' "$REPO_ROOT/.gates.toml" 2>/dev/null | head -1 | 
 out=$( cd "$REPO_ROOT" && "$TOOL" --CCN "$max_ccn" --length "$max_nloc" $files 2>&1 )
 code=$?
 if [ "$code" -ne 0 ]; then
-  if [ "$profile" = "regulated" ]; then
-    printf '%s\n' "$out" | gate_fail_block "$GATE" "lizard"
-    echo "  Fix: extract sub-functions, simplify." >&2
-    exit 1
-  fi
-  printf '%s\n' "$out" | gate_warn_block "$GATE" "lizard"
-  echo "  Promote to error in .gates.toml when ready." >&2
+  case "$tier" in
+    error)
+      printf '%s\n' "$out" | gate_fail_block "$GATE" "lizard"
+      echo "  Fix: extract sub-functions, simplify." >&2
+      exit 1
+      ;;
+    warn)
+      printf '%s\n' "$out" | gate_warn_block "$GATE" "lizard"
+      echo "  Promote to error in .gates.toml when ready." >&2
+      ;;
+    # 'off' was handled above with exit 77; should never reach here.
+  esac
 fi
 exit 0
