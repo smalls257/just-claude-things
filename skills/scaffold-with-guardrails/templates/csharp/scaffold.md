@@ -142,6 +142,51 @@ After `dotnet new webapi`, also **strip the weather-forecast boilerplate** from 
 
 After `dotnet new worker`, the default `Program.cs` is a minimal `Host.CreateApplicationBuilder` shell — leave it; the user wires MediatR/MassTransit at composition time. Add the same `AssemblyMarker.cs` and `AGENTS.md` pattern under `src/<App>.Service/`.
 
+## Gate system installation (always)
+
+After `dotnet new` steps complete, the skill installs the language-agnostic
+gate system from `templates/common/` and the .NET-conditional pieces from
+`templates/csharp/`:
+
+```bash
+SCAFFOLD="$HOME/.claude/plugins/cache/.../skills/scaffold-with-guardrails"
+
+# Language-agnostic
+cp -R "$SCAFFOLD/templates/common/githooks"     .githooks
+cp -R "$SCAFFOLD/templates/common/scripts"      scripts
+cp    "$SCAFFOLD/templates/common/gitconfig-gates"     .gitconfig.gates
+cp    "$SCAFFOLD/templates/common/gates.toml.example"  .gates.toml
+mkdir -p .tools
+cp "$SCAFFOLD/templates/common/tools/manifest.toml.template" .tools/manifest.toml
+cp "$SCAFFOLD/templates/common/tools/gitignore-template"     .tools/.gitignore
+cp -R "$SCAFFOLD/templates/common/semgrep-packs"        .semgrep/packs
+cp    "$SCAFFOLD/templates/common/docs/BYPASS-POLICY.md"      BYPASS-POLICY.md
+cp    "$SCAFFOLD/templates/common/docs/BRANCH-PROTECTION.md"  BRANCH-PROTECTION.md
+mkdir -p .github/workflows
+cp "$SCAFFOLD/templates/common/github-workflows/gates-backstop.yml.disabled" .github/workflows/
+cp "$SCAFFOLD/templates/common/github-workflows/tools-pin-check.yml"          .github/workflows/
+
+# .NET-conditional
+cp "$SCAFFOLD/templates/csharp/github-workflows/stryker-nightly.yml" .github/workflows/
+cp "$SCAFFOLD/templates/csharp/stryker-config.json" .
+
+# Make executables
+chmod +x .githooks/pre-commit .githooks/pre-push .githooks/commit-msg
+chmod +x .githooks/pre-commit.d/* .githooks/pre-push.d/* .githooks/commit-msg.d/*
+chmod +x scripts/*.sh
+
+# Stryker.NET tool install
+dotnet new tool-manifest 2>/dev/null || true
+dotnet tool install dotnet-stryker
+
+# Run bootstrap to wire hooks + fetch tools
+./scripts/bootstrap.sh
+```
+
+After the scaffold completes, the user must commit the populated
+`.tools/manifest.toml` (with real SHA256 checksums) to make the pinning
+contract binding.
+
 ## Directory.Build.targets (hand-written by skill)
 
 Cross-platform (forward slashes; works on macOS, Linux, Windows):
@@ -164,11 +209,20 @@ Cross-platform (forward slashes; works on macOS, Linux, Windows):
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash(git commit:*)",
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/pre-commit.sh"
+            "command": ".githooks/pre-commit"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(git push:*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".githooks/pre-push"
           }
         ]
       }
@@ -187,7 +241,7 @@ Cross-platform (forward slashes; works on macOS, Linux, Windows):
 }
 ```
 
-Note: Verify the exact `.claude/settings.json` hook schema against current Claude Code docs at scaffold time — the schema may evolve between skill versions.
+Note the matcher tightening (`Bash(git commit:*)` instead of `Bash`) — fixes the broad-matcher issue from the audit. Claude Code's hook matcher accepts glob-like patterns; this only fires on `git commit`/`git push` invocations. Verify the exact `.claude/settings.json` hook schema against current Claude Code docs at scaffold time — the schema may evolve between skill versions.
 
 ## NetArchTest starter — one per module (hand-written by skill)
 
