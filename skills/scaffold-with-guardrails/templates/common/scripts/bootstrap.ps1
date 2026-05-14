@@ -65,11 +65,16 @@ if ($Offline) {
     python -m pip install --user pipx
   }
   if (-not (Get-Command pipx -ErrorAction SilentlyContinue)) {
-    Fail "pipx installed to user-site but not on PATH; add %APPDATA%\Python\PythonXY\Scripts and re-run bootstrap"
+    $pyVer = python -c "import sys; print(f'Python{sys.version_info.major}{sys.version_info.minor}')"
+    Fail "pipx installed to user-site but not on PATH; add %APPDATA%\$pyVer\Scripts and re-run bootstrap (or run: python -m pipx ensurepath)"
   }
-  # Visible warnings instead of silent fallback
-  try { pipx install semgrep } catch { Warn "semgrep install failed; gates will report missing tool when run" }
-  try { pipx install lizard  } catch { Warn "lizard install failed; gates will report missing tool when run" }
+  # Visible warnings instead of silent fallback.
+  # Native commands don't throw on non-zero exit (try/catch wouldn't catch),
+  # and $ErrorActionPreference='Stop' doesn't apply to native processes.
+  pipx install semgrep
+  if ($LASTEXITCODE -ne 0) { Warn "semgrep install failed; gates will report missing tool when run" }
+  pipx install lizard
+  if ($LASTEXITCODE -ne 0) { Warn "lizard install failed; gates will report missing tool when run" }
 }
 
 # 5. Wire git hooks (idempotent)
@@ -109,11 +114,11 @@ if (Test-Path $preCommit) {
 
 $profileLine = (Select-String -Path .gates.toml -Pattern '^profile' -ErrorAction SilentlyContinue | Select-Object -First 1).Line
 if ($profileLine) {
-  $profile = $profileLine -replace '.*"(.*)".*','$1'
+  $gatesProfile = $profileLine -replace '.*"(.*)".*','$1'
 } else {
-  $profile = "standard"
+  $gatesProfile = "standard"
 }
 
 Write-Host ""
-Write-Host "Gates active. Profile: $profile."
+Write-Host "Gates active. Profile: $gatesProfile."
 Write-Host "Bypass: git commit --no-verify  (logs as Verified: no)"
