@@ -27,3 +27,14 @@ teardown() { cleanup_repo; }
   assert_failure
   assert_output --partial "[FAIL 40-deps]"
 }
+
+@test "40-deps blocks with MISSING when trivy absent and manifest staged" {
+  cd "$REPO"
+  install_stub_tool "gitleaks" 0
+  rm -f "$REPO/.tools/trivy"
+  echo '{"dependencies": {"foo": "1.0.0"}}' > package.json
+  git add package.json
+  run git commit -m "test"
+  assert_failure
+  assert_output --partial "[MISSING 40-deps]"
+}

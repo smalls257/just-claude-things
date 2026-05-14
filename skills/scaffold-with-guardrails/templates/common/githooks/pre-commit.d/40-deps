@@ -23,6 +23,10 @@ if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
   exit 2
 fi
 
+# Note: trivy scans the full tree (--scanners vuln on $REPO_ROOT), not just the staged manifests.
+# Staged manifests gate WHETHER we scan; the scan itself is whole-tree for accuracy
+# (cross-manifest resolutions, transitive deps, lockfile drift). Don't refactor to scoped scan
+# unless trivy gains a reliable per-manifest mode.
 out=$("$TOOL" fs --scanners vuln --severity HIGH,CRITICAL --quiet --exit-code 1 "$REPO_ROOT" 2>&1)
 code=$?
 if [ "$code" -ne 0 ]; then

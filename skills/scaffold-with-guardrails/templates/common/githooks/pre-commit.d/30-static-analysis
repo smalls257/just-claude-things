@@ -7,6 +7,16 @@ GATE_DIR="$(dirname "${BASH_SOURCE[0]}")"
 . "$(dirname "$GATE_DIR")/_output.sh"
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+
+# Find changed source files in this commit. Self-skip if none — keeps the tool dependency
+# from infecting commits that don't touch code (Infected Core avoidance).
+# grep exit 1 = zero matches = empty $files → self-skip below. Not a Silent Fallback.
+files=$(git diff --cached --name-only --diff-filter=ACM \
+        | grep -E '\.(cs|py|ts|tsx|js|jsx|go|java)$' || true)
+if [ -z "$files" ]; then
+  exit 77
+fi
+
 TOOL="${REPO_ROOT}/.tools/semgrep"
 if [ ! -x "$TOOL" ] && ! command -v semgrep >/dev/null 2>&1; then
   gate_missing_tool "$GATE" "semgrep" "Required for static analysis (vendored rules in .semgrep/)."
@@ -16,14 +26,6 @@ fi
 
 # No telemetry, no registry. Vendored rules only.
 export SEMGREP_SEND_METRICS=off
-
-# Find changed source files in this commit. Self-skip if none.
-# grep exit 1 = zero matches = empty $files → self-skip below. Not a Silent Fallback.
-files=$(git diff --cached --name-only --diff-filter=ACM \
-        | grep -E '\.(cs|py|ts|tsx|js|jsx|go|java)$' || true)
-if [ -z "$files" ]; then
-  exit 77
-fi
 
 # Unquoted $files is intentional: word-split filenames into args.
 # shellcheck disable=SC2086
@@ -35,8 +37,7 @@ out=$("$TOOL" scan \
     $files 2>&1)
 code=$?
 if [ "$code" -ne 0 ]; then
-  # semgrep exit codes: 0 ok, 1 findings, 2 config error, 3+ tool error (crash/invalid pattern/etc).
-  # Route findings to gate_fail; everything else to gate_tool_error so crashes don't look like findings.
+  # semgrep exit codes: 0 ok, 1 findings, 2 config error, 3+ tool error.
   if [ "$code" -eq 1 ]; then
     printf '%s\n' "$out" | gate_fail_block "$GATE" "semgrep"
     echo "  Fix: edit listed files, or waive with \`// nosemgrep: <rule-id> -- <reason>\`." >&2
