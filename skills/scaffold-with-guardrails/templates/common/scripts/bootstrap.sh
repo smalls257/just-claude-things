@@ -44,47 +44,59 @@ py_ok=$(python3 -c 'import sys; print(1 if sys.version_info >= (3,10) else 0)')
 echo "    ok (git $git_ver, python $py_ver)"
 
 # 2. Detect worktree
+say 2 "Detecting worktree layout..."
 GIT_DIR=$(git rev-parse --git-dir)
 GIT_COMMON_DIR=$(git rev-parse --git-common-dir)
 if [ "$GIT_DIR" != "$GIT_COMMON_DIR" ]; then
   echo "    Worktree detected. Writing config to $GIT_COMMON_DIR"
+else
+  echo "    Primary checkout (no worktree)."
 fi
 
-# 3. Tools (skipped if --offline)
+# 3 & 4. Tools (skipped if --offline)
 if [ "$OFFLINE" = "1" ]; then
-  say 2 "Skipping tool downloads (--offline)"
+  say 3 "Skipping pinned binary downloads (--offline)"
+  say 4 "Skipping pipx installs (--offline)"
 else
-  say 2 "Downloading pinned binaries..."
+  say 3 "Downloading pinned binaries..."
   for tool in gitleaks trivy scc; do
     fetch_tool "$tool" || fail "$tool fetch failed"
   done
-  say 3 "Installing pipx tools..."
+  say 4 "Installing pipx tools..."
   command -v pipx >/dev/null || python3 -m pip install --user pipx
-  pipx install semgrep || true
-  pipx install lizard || true
+  command -v pipx >/dev/null || fail "pipx installed to user-site but not on PATH; add ~/.local/bin (Linux/macOS) and re-run bootstrap"
+  pipx install semgrep || echo "[WARN] semgrep install failed; gates will report missing tool when run" >&2
+  pipx install lizard  || echo "[WARN] lizard install failed; gates will report missing tool when run" >&2
 fi
 
-# 4. Wire git hooks (idempotent)
-say 4 "Wiring git hooks..."
+# 5. Wire git hooks (idempotent)
+say 5 "Wiring git hooks..."
 if ! git config --get-all include.path 2>/dev/null | grep -q "^\.\./\.gitconfig\.gates$"; then
   git config --local include.path ../.gitconfig.gates
 fi
 
-# 5. Worktree symlink for .tools/
+# 6. Worktree symlink for .tools/
+# Note: assumes main repo was bootstrapped first (its .tools/ exists).
+# If not, the symlink is silently skipped and tools will be re-fetched.
 if [ "$GIT_DIR" != "$GIT_COMMON_DIR" ]; then
+  say 6 "Linking .tools/ from main worktree..."
   MAIN_TOOLS="$(cd "$GIT_COMMON_DIR/.." && pwd)/.tools"
   if [ -d "$MAIN_TOOLS" ] && [ ! -e "$REPO_ROOT/.tools" ]; then
     ln -s "$MAIN_TOOLS" "$REPO_ROOT/.tools"
   fi
+else
+  say 6 "Worktree symlink not applicable (primary checkout)."
 fi
 
-# 6. Self-test
-say 5 "Verifying wiring..."
+# 7. Self-test
+say 7 "Verifying wiring..."
 if [ -x ".githooks/pre-commit" ]; then
   .githooks/pre-commit --self-test >/dev/null || fail "pre-commit self-test failed"
+elif [ -e ".githooks/pre-commit" ]; then
+  echo "[WARN] .githooks/pre-commit exists but is not executable; skipping self-test" >&2
 fi
 
-# 7. Profile lookup
+# Profile lookup (summary)
 profile=$(grep -E '^profile' .gates.toml 2>/dev/null | head -1 | sed 's/.*"\(.*\)".*/\1/' || echo "standard")
 [ -z "$profile" ] && profile="standard"
 
