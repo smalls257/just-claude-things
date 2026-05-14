@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# TODO(Task 13): full pre-push gate dispatcher
+exit 0

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# TODO(Task 16): commit-msg dispatcher + conventional + verified trailer
+exit 0

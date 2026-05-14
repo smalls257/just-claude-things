@@ -1,0 +1,87 @@
+# shellcheck shell=bash
+# Sourced by pre-commit / pre-push / commit-msg hooks.
+# Required env in caller: HOOK_NAME (e.g., "pre-commit"), HOOK_DIR (resolved).
+
+set -uo pipefail
+
+GATES_LOG_DIR="$(git rev-parse --git-common-dir)"
+GATES_LAST_RUN="${GATES_LOG_DIR}/gates-last-run"
+GATES_PERF_LOG="${GATES_LOG_DIR}/gates-perf.log"
+GATES_LOCK="${GATES_LOG_DIR}/gates.lock"
+
+if [ -e "$GATES_LOCK" ]; then
+  age=$(( $(date +%s) - $(stat -f %m "$GATES_LOCK" 2>/dev/null || stat -c %Y "$GATES_LOCK") ))
+  if [ "$age" -lt 600 ]; then
+    echo "[BLOCK] Another gate run is in progress (lock: $GATES_LOCK). If stale, rm it." >&2
+    exit 1
+  fi
+fi
+touch "$GATES_LOCK"
+trap 'rm -f "$GATES_LOCK"' EXIT
+
+skip_csv="${GATES_SKIP:-}"
+dry_run="${GATES_DRY_RUN:-0}"
+
+SKIPPED=()
+FAILED=()
+RAN=()
+
+gate_skipped() {
+  local name="$1"
+  local IFS=,
+  for s in $skip_csv; do
+    [ "$s" = "$name" ] && return 0
+  done
+  return 1
+}
+
+for gate in "$HOOK_DIR"/[0-9]*; do
+  [ -e "$gate" ] || continue
+  base="$(basename "$gate")"
+  name="${base#[0-9]*-}"
+
+  if gate_skipped "$name"; then
+    echo "SKIP: $base (GATES_SKIP)"
+    SKIPPED+=("$name")
+    continue
+  fi
+
+  start=$(date +%s)
+  if [ "$dry_run" = "1" ]; then
+    echo "DRY: would run $base"
+    "$gate" || true
+    RAN+=("$name")
+  else
+    if "$gate"; then
+      RAN+=("$name")
+    else
+      code=$?
+      if [ "$code" -eq 77 ]; then
+        echo "SKIP: $base (self-skip)"
+      else
+        echo "[FAIL $base] exit $code" >&2
+        FAILED+=("$name:$code")
+      fi
+    fi
+  fi
+  end=$(date +%s)
+  echo "$HOOK_NAME $base $((end - start))s" >> "$GATES_PERF_LOG"
+done
+
+{
+  echo "HOOK=$HOOK_NAME"
+  echo "SKIPPED=${SKIPPED[*]:-}"
+  echo "FAILED=${FAILED[*]:-}"
+  echo "DRY_RUN=$dry_run"
+} > "$GATES_LAST_RUN"
+
+if [ "$dry_run" = "1" ]; then
+  exit 0
+fi
+if [ ${#FAILED[@]} -gt 0 ]; then
+  echo "" >&2
+  echo "[BLOCK] ${#FAILED[@]} gate(s) failed: ${FAILED[*]}" >&2
+  echo "Bypass (audited): git commit --no-verify  OR  GATES_SKIP=<names> git commit" >&2
+  exit 1
+fi
+exit 0

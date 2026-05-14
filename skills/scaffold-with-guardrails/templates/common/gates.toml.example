@@ -1,0 +1,6 @@
+profile = "standard"
+
+# Per-gate overrides (optional). Tier defaults from gate header.
+# [gates.complexity]
+# enforce = "warn"
+# max_ccn = 10
