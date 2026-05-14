@@ -1,6 +1,20 @@
+# Gate profile. One of: prototype | standard | regulated.
 profile = "standard"
 
-# Per-gate overrides (optional). Tier defaults from gate header.
+# Per-gate overrides. Uncomment + customize as needed.
+
 # [gates.complexity]
-# enforce = "warn"
+# enforce = "warn"     # warn | error | off
 # max_ccn = 10
+# max_nloc = 60
+# max_params = 5
+
+# [gates.file_size]
+# enforce = "warn"
+# max_file_loc = 400
+
+# Performance budgets (seconds). Over-budget = warn, never block.
+[budget]
+pre_commit_total_s = 10
+pre_push_total_s = 60
+per_gate_warn_s = 3
