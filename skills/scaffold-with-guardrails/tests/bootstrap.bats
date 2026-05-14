@@ -41,3 +41,34 @@ teardown() { cleanup_repo; }
   run "$REPO/scripts/verify-tool-pins.sh" "$REPO/.tools/missing.toml"
   assert_equal "$status" 2
 }
+
+@test "bootstrap.sh wires git hooks via include.path" {
+  git -C "$REPO" config --local --unset include.path 2>/dev/null || true
+  run "$REPO/scripts/bootstrap.sh" --offline
+  assert_success
+  run git -C "$REPO" config --get include.path
+  assert_output "../.gitconfig.gates"
+}
+
+@test "bootstrap.sh is idempotent" {
+  run "$REPO/scripts/bootstrap.sh" --offline
+  assert_success
+  run "$REPO/scripts/bootstrap.sh" --offline
+  assert_success
+  run bash -c "git -C '$REPO' config --get-all include.path | wc -l | tr -d ' '"
+  assert_output "1"
+}
+
+@test "bootstrap.sh refuses unknown args" {
+  run "$REPO/scripts/bootstrap.sh" --does-not-exist
+  assert_failure
+  assert_output --partial "Unknown arg"
+}
+
+@test "bootstrap.sh prints success summary" {
+  run "$REPO/scripts/bootstrap.sh" --offline
+  assert_success
+  assert_output --partial "Gates active"
+  assert_output --partial "Profile:"
+  assert_output --partial "Bypass:"
+}
