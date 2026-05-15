@@ -642,6 +642,119 @@ STUB
   ( cd "$repo" && assert_trailer "partial" ) || return 1
 }
 
+# === Bypass + safety group ============================================
+
+s20_dry_run() {
+  # GATES_DRY_RUN=1 forces exit 0 even when a gate would fail.
+  # lizard exits 1 (would block under normal run); dry-run ignores the failure.
+  # Output must contain "DRY". gates-last-run must record DRY_RUN=1.
+  local repo="$UAT_ROOT/repos/bypass_dry_run"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+
+  # Gate under test: lizard exits 1 (would block if dry-run were off).
+  install_repo_tool "$repo" lizard 1 "function complexity exceeds threshold"
+
+  # Bystander stubs so every other gate that fires passes cleanly.
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" semgrep  0
+  install_repo_tool "$repo" trivy    0
+  # scc: must emit valid JSON so 61-file-size parses cleanly.
+  cat > "$repo/.tools/scc" <<'STUB'
+#!/usr/bin/env bash
+echo '[]'
+exit 0
+STUB
+  chmod +x "$repo/.tools/scc"
+
+  # Stage a .py file to trigger complexity/static-analysis gates.
+  # No pyproject.toml → 10-format and 50-tests-unit self-skip (irrelevant in dry-run).
+  printf 'def f(): pass\n' > "$repo/module.py"
+  ( cd "$repo" && git add module.py ) || return 1
+
+  local out rc
+  out=$( cd "$repo" && GATES_DRY_RUN=1 .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 0 "$rc" || return 1
+  assert_output_contains "DRY" "$out" || return 1
+
+  # gates-last-run must record DRY_RUN=1.
+  assert_file_exists "$repo/.git/gates-last-run" || return 1
+  local dry_line
+  dry_line=$(grep '^DRY_RUN=' "$repo/.git/gates-last-run")
+  if [ "$dry_line" != "DRY_RUN=1" ]; then
+    echo "ASSERT FAIL: expected DRY_RUN=1 in gates-last-run, got: $dry_line" >&2
+    return 1
+  fi
+}
+
+s21_lock_concurrent() {
+  # A pre-existing fresh lock causes dispatcher to emit [BLOCK] and exit 1.
+  local repo="$UAT_ROOT/repos/bypass_lock_concurrent"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+
+  # Stage a file so the hook has something to commit.
+  printf 'placeholder\n' > "$repo/README.md"
+  ( cd "$repo" && git add README.md ) || return 1
+
+  # Pre-create lock file; fresh touch → age 0 < default stale threshold 600.
+  touch "$repo/.git/gates.lock"
+
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_output_contains "\[BLOCK\]|lock" "$out" || return 1
+}
+
+s22_lock_stale_takeover() {
+  # GATES_LOCK_STALE_S=0 makes any lock age stale; dispatcher takes over and
+  # emits [WARN] + "stale" to stderr. Gates then run normally.
+  local repo="$UAT_ROOT/repos/bypass_lock_stale"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+
+  # Install passing bystander stub for 20-secrets (always fires, no self-skip).
+  install_repo_tool "$repo" gitleaks 0
+
+  # Stage README.md only (no .py file) → source-gated checks self-skip.
+  printf '# project\n' > "$repo/README.md"
+  ( cd "$repo" && git add README.md ) || return 1
+
+  # Pre-create lock file; GATES_LOCK_STALE_S=0 → any age is stale.
+  touch "$repo/.git/gates.lock"
+
+  local out rc
+  out=$( cd "$repo" && GATES_LOCK_STALE_S=0 .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 0 "$rc" || return 1
+  assert_output_contains "\[WARN\]" "$out" || return 1
+  assert_output_contains "stale" "$out" || return 1
+}
+
+s23_subdir_hook() {
+  # Dispatcher uses git rev-parse --git-common-dir which resolves correctly from
+  # any subdirectory; hook must not emit path-resolution errors.
+  local repo="$UAT_ROOT/repos/subdir_hook"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+
+  # Install passing stub for 20-secrets (always fires).
+  install_repo_tool "$repo" gitleaks 0
+
+  # Create a subdir, place a file there, and stage it.
+  mkdir -p "$repo/subdir"
+  printf '# subdir readme\n' > "$repo/subdir/README.md"
+  ( cd "$repo" && git add subdir/README.md ) || return 1
+
+  local out rc
+  out=$( cd "$repo/subdir" && ../.githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 0 "$rc" || return 1
+  if echo "$out" | grep -qE 'REPO_ROOT.*not.*found|cannot find|No such file'; then
+    echo "ASSERT FAIL: subdir path resolution broken" >&2
+    echo "$out" >&2
+    return 1
+  fi
+}
+
 # === Driver ============================================================
 SCENARIOS=(
   s01_bootstrap_fresh
@@ -663,6 +776,10 @@ SCENARIOS=(
   s17_trailer_yes
   s18_trailer_no
   s19_trailer_partial
+  s20_dry_run
+  s21_lock_concurrent
+  s22_lock_stale_takeover
+  s23_subdir_hook
 )
 
 cleanup() {
