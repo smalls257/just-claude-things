@@ -35,6 +35,68 @@ mkdir -p "$UAT_ROOT/logs"
 
 # === Helpers (filled in Task 2-3) ======================================
 
+assert_exit() {
+  local expected="$1" actual="$2"
+  if [ "$expected" != "$actual" ]; then
+    echo "ASSERT FAIL: expected exit $expected, got $actual" >&2
+    return 1
+  fi
+}
+
+assert_output_contains() {
+  local pattern="$1" output="$2"
+  if ! echo "$output" | grep -qE "$pattern"; then
+    echo "ASSERT FAIL: output missing pattern: $pattern" >&2
+    echo "Output was:" >&2
+    echo "$output" >&2
+    return 1
+  fi
+}
+
+assert_file_exists() {
+  local path="$1"
+  if [ ! -e "$path" ]; then
+    echo "ASSERT FAIL: missing file: $path" >&2
+    return 1
+  fi
+}
+
+assert_trailer() {
+  local expected="$1"
+  local actual
+  actual="$(git log -1 --format='%(trailers:key=Verified,valueonly,separator=)')"
+  actual="${actual// /}"
+  expected="${expected// /}"
+  if [ "$actual" != "$expected" ]; then
+    echo "ASSERT FAIL: trailer Verified expected='$expected' got='$actual'" >&2
+    return 1
+  fi
+}
+
+assert_no_trailer() {
+  local actual
+  actual="$(git log -1 --format='%(trailers:key=Verified,valueonly,separator=)')"
+  actual="${actual// /}"
+  if [ -n "$actual" ]; then
+    echo "ASSERT FAIL: expected no Verified trailer, got '$actual'" >&2
+    return 1
+  fi
+}
+
+assert_gate_skipped() {
+  local gate="$1"
+  local lastrun=".git/gates-last-run"
+  if [ ! -f "$lastrun" ]; then
+    echo "ASSERT FAIL: no $lastrun" >&2
+    return 1
+  fi
+  if ! grep -qE "^SKIPPED=.*${gate}" "$lastrun"; then
+    echo "ASSERT FAIL: gate $gate not skipped in $lastrun" >&2
+    cat "$lastrun" >&2
+    return 1
+  fi
+}
+
 # === Scenarios (filled in Task 4-11) ===================================
 
 # === Driver ============================================================
