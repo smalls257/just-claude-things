@@ -171,6 +171,20 @@ restore_real_tool() {
   export PATH="$ORIG_PATH"
 }
 
+# Write a stub tool directly into <repo>/.tools/<name>.
+# Used for gates that resolve the tool via .tools/<name> (not PATH).
+# Args: <repo_dir> <tool_name> <exit_code> [stdout_msg]
+install_repo_tool() {
+  local repo="$1" name="$2" rc="$3" msg="${4:-}"
+  mkdir -p "$repo/.tools"
+  cat >"$repo/.tools/$name" <<EOF
+#!/usr/bin/env bash
+[ -n "$msg" ] && echo "$msg"
+exit $rc
+EOF
+  chmod +x "$repo/.tools/$name"
+}
+
 # === Scenarios (filled in Task 4-11) ===================================
 
 # === Bootstrap group ===================================================
@@ -270,6 +284,133 @@ s05_verify_tool_pins() {
   assert_output_contains "REPLACE_ME|unpinned|stale" "$out" || return 1
 }
 
+# === Gates-fire group ==================================================
+
+s06_format() {
+  # ruff format gate (10-format) fires when pyproject.toml has [tool.ruff] and
+  # a ruff stub exits 1 (unformatted output detected).
+  local repo="$UAT_ROOT/repos/gates_format"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  # Trigger has_ruff_format detector.
+  printf '[tool.ruff]\n' >> "$repo/pyproject.toml"
+  # Staged .py file so the hook has something to commit.
+  printf 'x = 1\n' > "$repo/main.py"
+  ( cd "$repo" && git add pyproject.toml main.py )
+  # Stub ruff exits 1 → unformatted.
+  install_stub_tool ruff 1 "Would reformat main.py"
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_output_contains "10-format|ruff" "$out" || return 1
+}
+
+s07_secrets() {
+  # gitleaks gate (20-secrets) fires when .tools/gitleaks exits 1 (secret found).
+  # Gate resolves the tool via .tools/gitleaks directly — PATH stub is insufficient.
+  local repo="$UAT_ROOT/repos/gates_secrets"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  install_repo_tool "$repo" gitleaks 1 "secret found"
+  # Stage a file so the hook has something to commit.
+  printf 'API_KEY=hunter2\n' > "$repo/config.txt"
+  ( cd "$repo" && git add config.txt )
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_output_contains "20-secrets|gitleaks" "$out" || return 1
+}
+
+s08_static_analysis() {
+  # semgrep gate (30-static-analysis) fires when a staged .py file is found and
+  # the semgrep stub exits 1 (findings). Gate falls back to PATH when .tools/semgrep
+  # is absent, so install_stub_tool is sufficient here.
+  local repo="$UAT_ROOT/repos/gates_static"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  # Create a minimal .semgrep config dir (gate passes --config .semgrep to the tool).
+  mkdir -p "$repo/.semgrep"
+  printf 'rules: []\n' > "$repo/.semgrep/rules.yaml"
+  # Stage a .py file so the self-skip check passes.
+  printf 'import os\n' > "$repo/app.py"
+  ( cd "$repo" && git add app.py .semgrep/ )
+  # Stub semgrep exits 1 → findings (not tool error).
+  install_stub_tool semgrep 1 "found 1 finding"
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_output_contains "30-static-analysis|semgrep" "$out" || return 1
+}
+
+s09_deps() {
+  # trivy gate (40-deps) fires when a staged manifest is found and .tools/trivy
+  # exits 1 (HIGH/CRITICAL findings). Gate resolves the tool via .tools/trivy.
+  local repo="$UAT_ROOT/repos/gates_deps"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  install_repo_tool "$repo" trivy 1 "HIGH vulnerability found"
+  # Stage package.json to satisfy the manifest pattern check.
+  printf '{"name":"test","version":"1.0.0"}\n' > "$repo/package.json"
+  ( cd "$repo" && git add package.json )
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_output_contains "40-deps|trivy" "$out" || return 1
+}
+
+s10_tests_unit() {
+  # pytest gate (50-tests-unit) fires when pyproject.toml + tests/ dir exist and
+  # the pytest stub exits 1 (failing tests). Exit 5 = no tests collected → self-skip;
+  # we use exit 1 to ensure the gate blocks.
+  local repo="$UAT_ROOT/repos/gates_tests"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  # Satisfy has_python_tests: needs pyproject.toml + tests/ dir.
+  printf '[build-system]\nrequires = []\n' > "$repo/pyproject.toml"
+  mkdir -p "$repo/tests"
+  # Stage at least one file so pre-commit has a reason to run.
+  printf 'def add(a, b): return a + b\n' > "$repo/lib.py"
+  ( cd "$repo" && git add pyproject.toml lib.py && git add tests/ 2>/dev/null || true )
+  # Stub pytest exits 1 → test failures (not "no tests collected").
+  install_stub_tool pytest 1 "FAILED tests/test_lib.py::test_add"
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_output_contains "50-tests-unit|pytest" "$out" || return 1
+}
+
+s11_complexity_standard_warn() {
+  # 60-complexity is optional tier → warns (not blocks) under standard profile.
+  # lizard stub exits 1 (findings). Gate emits gate_warn_block but exits 0.
+  # Verify: pre-commit exits 0 and FAILED= line in gates-last-run is empty.
+  # Bystander gates that would otherwise block (gitleaks/semgrep/scc MISSING) get
+  # passing repo-tool stubs so the isolation target is complexity alone.
+  local repo="$UAT_ROOT/repos/gates_complexity"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"   # default profile = standard
+  # Install the gate under test: lizard exits 1 (findings → warn in standard).
+  install_repo_tool "$repo" lizard 1 "function complexity exceeds threshold"
+  # Bystander stubs (exit 0 = pass) so other gates don't block the commit.
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" semgrep 0
+  install_repo_tool "$repo" scc 0 "[]"  # scc outputs JSON; empty array = no files
+  # Stage a .py file to pass the self-skip check (complexity, static-analysis, file-size).
+  printf 'def f(): pass\n' > "$repo/module.py"
+  ( cd "$repo" && git add module.py )
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 0 "$rc" || return 1
+  assert_output_contains "WARN|60-complexity" "$out" || return 1
+  # gates-last-run must exist and FAILED= must be empty (no blocking failures).
+  assert_file_exists "$repo/.git/gates-last-run" || return 1
+  local failed_line
+  failed_line=$(grep '^FAILED=' "$repo/.git/gates-last-run")
+  if [ "$failed_line" != "FAILED=" ]; then
+    echo "ASSERT FAIL: expected empty FAILED= in gates-last-run, got: $failed_line" >&2
+    return 1
+  fi
+}
+
 # === Driver ============================================================
 SCENARIOS=(
   s01_bootstrap_fresh
@@ -277,6 +418,12 @@ SCENARIOS=(
   s03_bootstrap_offline
   s04_worktree
   s05_verify_tool_pins
+  s06_format
+  s07_secrets
+  s08_static_analysis
+  s09_deps
+  s10_tests_unit
+  s11_complexity_standard_warn
 )
 
 cleanup() {
