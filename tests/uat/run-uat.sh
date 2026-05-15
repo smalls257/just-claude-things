@@ -907,6 +907,46 @@ s29_self_skip_exit77() {
   assert_output_contains "SKIP.*static-analysis" "$out" || return 1
 }
 
+# === CI-template inspection group =====================================
+
+s30_gates_backstop_yaml() {
+  # gates-backstop.yml.disabled must parse as valid YAML.
+  local path="$SCAFFOLD_ROOT/skills/scaffold-with-guardrails/templates/common/github-workflows/gates-backstop.yml.disabled"
+  assert_file_exists "$path" || return 1
+  python3 -c "import yaml; yaml.safe_load(open('$path'))" || return 1
+}
+
+s31_tools_pin_check_cron() {
+  # tools-pin-check.yml must contain a valid 5-field cron expression.
+  # PyYAML parses the YAML 'on' key as boolean True — access via data[True].
+  local path="$SCAFFOLD_ROOT/skills/scaffold-with-guardrails/templates/common/github-workflows/tools-pin-check.yml"
+  assert_file_exists "$path" || return 1
+  python3 -c "
+import yaml
+data = yaml.safe_load(open('$path'))
+cron = data[True]['schedule'][0]['cron']
+assert len(cron.split()) == 5, 'not a 5-field cron: ' + cron
+" || return 1
+}
+
+s32_stryker_nightly_jq() {
+  # stryker-nightly.yml must contain the quoted jq key ."stryker-config".thresholds.break.
+  # The hyphen in stryker-config requires quoting; unquoted would be a jq syntax error.
+  local path="$SCAFFOLD_ROOT/skills/scaffold-with-guardrails/templates/csharp/github-workflows/stryker-nightly.yml"
+  assert_file_exists "$path" || return 1
+  grep -F '."stryker-config".thresholds.break' "$path" || return 1
+}
+
+s33_run_gates_ci_help() {
+  # run-gates-ci.sh --help must exit 0 and emit a Usage: banner.
+  local path="$SCAFFOLD_ROOT/skills/scaffold-with-guardrails/templates/common/scripts/run-gates-ci.sh"
+  assert_file_exists "$path" || return 1
+  local out rc
+  out=$(bash "$path" --help 2>&1); rc=$?
+  assert_exit 0 "$rc" || return 1
+  assert_output_contains "Usage:" "$out" || return 1
+}
+
 # === Driver ============================================================
 SCENARIOS=(
   s01_bootstrap_fresh
@@ -938,6 +978,10 @@ SCENARIOS=(
   s27_tool_missing_exit2
   s28_tool_error_exit3
   s29_self_skip_exit77
+  s30_gates_backstop_yaml
+  s31_tools_pin_check_cron
+  s32_stryker_nightly_jq
+  s33_run_gates_ci_help
 )
 
 cleanup() {
