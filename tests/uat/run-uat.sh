@@ -829,6 +829,84 @@ s26_profile_regulated() {
   fi
 }
 
+# === Tool-error group ==================================================
+
+s27_tool_missing_exit2() {
+  # 30-static-analysis exits 2 when semgrep is absent from both .tools/ and PATH.
+  # Dispatcher records FAILED=static-analysis:2.
+  # Strategy: restrict PATH to /usr/bin:/bin inside the hook invocation subshell
+  # so semgrep is guaranteed missing even if installed on the host.
+  local repo="$UAT_ROOT/repos/tool_missing_exit2"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  # Stage a .py file so 30-static-analysis does NOT self-skip.
+  printf 'import os\n' > "$repo/app.py"
+  ( cd "$repo" && git add app.py ) || return 1
+  # Bystander stubs: all other gates that fire must pass so static-analysis is the only failure.
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" trivy    0
+  install_repo_tool "$repo" lizard   0
+  install_repo_tool "$repo" scc      0
+  # Do NOT install semgrep in .tools/ — leave .tools/semgrep absent.
+  local out rc
+  # Restrict PATH so host semgrep (if present) cannot be found by the gate.
+  out=$( cd "$repo" && PATH="/usr/bin:/bin" .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_file_exists "$repo/.git/gates-last-run" || return 1
+  if ! grep -qE '^FAILED=.*static-analysis:2' "$repo/.git/gates-last-run"; then
+    echo "ASSERT FAIL: expected static-analysis:2 in FAILED=" >&2
+    cat "$repo/.git/gates-last-run" >&2
+    return 1
+  fi
+}
+
+s28_tool_error_exit3() {
+  # 30-static-analysis exits 3 when the semgrep tool itself exits with a non-1, non-0 code
+  # (e.g. exit 2 = config/internal error). Dispatcher records FAILED=static-analysis:3.
+  local repo="$UAT_ROOT/repos/tool_error_exit3"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  # Stage a .py file so 30-static-analysis does NOT self-skip.
+  printf 'import os\n' > "$repo/app.py"
+  ( cd "$repo" && git add app.py ) || return 1
+  # Bystander stubs for gates that would otherwise block or add noise.
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" trivy    0
+  install_repo_tool "$repo" lizard   0
+  install_repo_tool "$repo" scc      0
+  # semgrep stub exits 2: non-0, non-1 → gate interprets as tool/config error → gate exits 3.
+  # Gate resolves via PATH when .tools/semgrep is absent.
+  install_stub_tool semgrep 2 "semgrep internal error"
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_file_exists "$repo/.git/gates-last-run" || return 1
+  if ! grep -qE '^FAILED=.*static-analysis:3' "$repo/.git/gates-last-run"; then
+    echo "ASSERT FAIL: expected static-analysis:3 in FAILED=" >&2
+    cat "$repo/.git/gates-last-run" >&2
+    return 1
+  fi
+}
+
+s29_self_skip_exit77() {
+  # 30-static-analysis self-skips (exit 77) when no .py/.cs/.ts/.js/.go/.java files staged.
+  # Stage only README.md → gate self-skips → dispatcher records it in SKIPPED.
+  # pre-commit must exit 0 (no blocking failures) and output must contain SKIP.*static-analysis.
+  local repo="$UAT_ROOT/repos/self_skip_exit77"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  # Stage only a non-source file — no .py/.cs/.ts/.js/.go/.java.
+  printf '# project\n' > "$repo/README.md"
+  ( cd "$repo" && git add README.md ) || return 1
+  # 20-secrets always fires (no self-skip); provide passing gitleaks stub.
+  install_repo_tool "$repo" gitleaks 0
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 0 "$rc" || return 1
+  ( cd "$repo" && assert_gate_skipped "static-analysis" ) || return 1
+  assert_output_contains "SKIP.*static-analysis" "$out" || return 1
+}
+
 # === Driver ============================================================
 SCENARIOS=(
   s01_bootstrap_fresh
@@ -857,6 +935,9 @@ SCENARIOS=(
   s24_profile_prototype
   s25_profile_standard
   s26_profile_regulated
+  s27_tool_missing_exit2
+  s28_tool_error_exit3
+  s29_self_skip_exit77
 )
 
 cleanup() {
