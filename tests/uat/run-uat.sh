@@ -22,7 +22,7 @@ while [ $# -gt 0 ]; do
       cat <<'EOF'
 Usage: run-uat.sh [--verbose] [--live] [--only sNN_name]
   --verbose   Stream gate output to stderr
-  --live      Use real tools instead of stubs (slow)
+  --live      Reserved for future use; currently a no-op (stubs always used)
   --only ID   Run a single scenario
 EOF
       exit 0
@@ -32,6 +32,13 @@ EOF
 done
 
 mkdir -p "$UAT_ROOT/logs"
+
+# === UAT_LOCK — prevent concurrent runs ================================
+UAT_LOCK="/tmp/run-uat.lock"
+if ! ( set -o noclobber; : > "$UAT_LOCK" ) 2>/dev/null; then
+  echo "another run-uat.sh is running (lock: $UAT_LOCK)" >&2
+  exit 2
+fi
 
 # === Helpers (filled in Task 2-3) ======================================
 
@@ -913,6 +920,10 @@ s30_gates_backstop_yaml() {
   # gates-backstop.yml.disabled must parse as valid YAML.
   local path="$SCAFFOLD_ROOT/skills/scaffold-with-guardrails/templates/common/github-workflows/gates-backstop.yml.disabled"
   assert_file_exists "$path" || return 1
+  if ! python3 -c "import yaml" 2>/dev/null; then
+    echo "SKIP: PyYAML not installed; cannot validate YAML" >&2
+    return 0
+  fi
   python3 -c "import yaml; yaml.safe_load(open('$path'))" || return 1
 }
 
@@ -921,6 +932,10 @@ s31_tools_pin_check_cron() {
   # PyYAML parses the YAML 'on' key as boolean True — access via data[True].
   local path="$SCAFFOLD_ROOT/skills/scaffold-with-guardrails/templates/common/github-workflows/tools-pin-check.yml"
   assert_file_exists "$path" || return 1
+  if ! python3 -c "import yaml" 2>/dev/null; then
+    echo "SKIP: PyYAML not installed; cannot validate YAML" >&2
+    return 0
+  fi
   python3 -c "
 import yaml
 data = yaml.safe_load(open('$path'))
@@ -985,6 +1000,7 @@ SCENARIOS=(
 )
 
 cleanup() {
+  rm -f "$UAT_LOCK"
   if [ "${#FAILED[@]}" -eq 0 ]; then
     rm -rf "$UAT_ROOT"
   else
@@ -992,6 +1008,10 @@ cleanup() {
     echo "Diagnostic dir: $UAT_ROOT"
     echo "Failed scenarios: ${FAILED[*]}"
     echo "Per-scenario logs: $UAT_ROOT/logs/"
+    for s in "${FAILED[@]}"; do
+      echo "  - ${s}: $UAT_ROOT/logs/${s}.log"
+      echo "    reproduce: bash tests/uat/run-uat.sh --only ${s} --verbose"
+    done
   fi
 }
 trap cleanup EXIT
@@ -1011,6 +1031,8 @@ record_pass() { PASSED+=("$1"); }
 record_fail() { FAILED+=("$1"); }
 
 main() {
+  [ "$LIVE" = "1" ] && echo "[INFO] --live currently a no-op; scenarios use stubs unconditionally" >&2
+
   local scenarios_to_run=()
   if [ -n "$ONLY" ]; then
     scenarios_to_run=("$ONLY")
