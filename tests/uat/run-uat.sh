@@ -65,8 +65,9 @@ assert_trailer() {
   local expected="$1"
   local actual
   actual="$(git log -1 --format='%(trailers:key=Verified,valueonly,separator=)')"
-  actual="${actual// /}"
-  expected="${expected// /}"
+  # Trailer format: "yes" or "no (failed: ...)" or "partial (skipped: ...)".
+  # Compare only the leading word to ignore optional detail in parens.
+  actual="${actual%% *}"
   if [ "$actual" != "$expected" ]; then
     echo "ASSERT FAIL: trailer Verified expected='$expected' got='$actual'" >&2
     return 1
@@ -76,7 +77,7 @@ assert_trailer() {
 assert_no_trailer() {
   local actual
   actual="$(git log -1 --format='%(trailers:key=Verified,valueonly,separator=)')"
-  actual="${actual// /}"
+  actual="${actual%% *}"
   if [ -n "$actual" ]; then
     echo "ASSERT FAIL: expected no Verified trailer, got '$actual'" >&2
     return 1
