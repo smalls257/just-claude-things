@@ -98,6 +98,79 @@ assert_gate_skipped() {
   fi
 }
 
+# Bootstrap a fresh test repo from the scaffold template at $SCAFFOLD_ROOT.
+# Args: <target_dir> [profile]
+bootstrap_test_repo() {
+  local target="$1" profile="${2:-standard}"
+  mkdir -p "$target"
+  (
+    cd "$target"
+    git init -q
+    git config user.email "uat@example.com"
+    git config user.name "UAT"
+    # Stage scaffold template files into this repo.
+    local src="$SCAFFOLD_ROOT/skills/scaffold-with-guardrails/templates/common"
+    cp -R "$src/githooks" .githooks
+    cp -R "$src/scripts" .
+    cp "$src/gates.toml.example" .gates.toml
+    sed -i.bak "s|profile = \"standard\"|profile = \"$profile\"|" .gates.toml
+    rm -f .gates.toml.bak
+    chmod +x .githooks/pre-commit .githooks/pre-push .githooks/commit-msg
+    chmod +x scripts/*.sh
+    git config core.hooksPath .githooks
+    mkdir -p .tools
+    git add -A
+    # --no-verify: skip gates on scaffold seed commit (no real code, tools not installed).
+    git -c commit.gpgsign=false commit -q --no-verify -m "init: scaffold bootstrap"
+  )
+}
+
+# Snapshot the BASE_SHA in a repo. Call once after bootstrap.
+snapshot_base() {
+  ( cd "$1" && git rev-parse HEAD )
+}
+
+# Reset working tree + gate runtime state. Call at start of each scenario.
+# Args: <repo_dir> <base_sha>
+reset_state() {
+  local repo="$1" base="$2"
+  ( cd "$repo"
+    git reset --hard "$base" >/dev/null 2>&1
+    git clean -fdx >/dev/null 2>&1
+    rm -f .git/gates-last-run .git/gates-perf.log .git/gates.lock
+  )
+  unset GATES_SKIP GATES_DRY_RUN GATES_LOCK_STALE_S 2>/dev/null || true
+  export PATH="$ORIG_PATH"
+}
+
+# Run <fn> inside <repo>, with reset_state first.
+# Args: <repo> <base_sha> <fn_name>
+with_repo() {
+  local repo="$1" base="$2" fn="$3"
+  reset_state "$repo" "$base"
+  ( cd "$repo" && "$fn" )
+}
+
+# Install a stub tool that exits with the given code and emits optional stdout.
+# Args: <tool_name> <exit_code> [stdout_msg]
+install_stub_tool() {
+  local name="$1" rc="$2" msg="${3:-}"
+  local dir="$UAT_ROOT/stubs/${name}_${rc}"
+  mkdir -p "$dir"
+  cat >"$dir/$name" <<EOF
+#!/usr/bin/env bash
+[ -n "$msg" ] && echo "$msg"
+exit $rc
+EOF
+  chmod +x "$dir/$name"
+  export PATH="$dir:$PATH"
+}
+
+# Strip all stubs from PATH (used by reset_state via ORIG_PATH).
+restore_real_tool() {
+  export PATH="$ORIG_PATH"
+}
+
 # === Scenarios (filled in Task 4-11) ===================================
 
 # === Driver ============================================================
