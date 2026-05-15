@@ -249,7 +249,7 @@ s04_worktree() {
     if echo "$out" | grep -qE 'REPO_ROOT.*not.*found|cannot find|No such file'; then
       echo "ASSERT FAIL: worktree path resolution broken"; echo "$out"; return 1
     fi
-  )
+  ) || return 1
 }
 
 s05_verify_tool_pins() {
