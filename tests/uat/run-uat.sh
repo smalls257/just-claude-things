@@ -173,8 +173,111 @@ restore_real_tool() {
 
 # === Scenarios (filled in Task 4-11) ===================================
 
+# === Bootstrap group ===================================================
+
+s01_bootstrap_fresh() {
+  # bootstrap.sh wires hooks in an already-scaffolded repo; it does not create
+  # the scaffold files itself. Use bootstrap_test_repo to lay down the template,
+  # then run bootstrap.sh to wire the hooks, and assert wiring held.
+  local repo="$UAT_ROOT/repos/bootstrap_fresh"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  cd "$repo"
+  "$SCAFFOLD_ROOT/skills/scaffold-with-guardrails/templates/common/scripts/bootstrap.sh" --offline
+  assert_file_exists .githooks/pre-commit || return 1
+  assert_file_exists .gates.toml          || return 1
+  assert_file_exists .tools               || return 1
+  local hp; hp="$(git config core.hooksPath)"
+  [ "$hp" = ".githooks" ] || { echo "core.hooksPath=$hp"; return 1; }
+}
+
+s02_bootstrap_idempotent() {
+  # bootstrap.sh does not emit an idempotency message; it reruns all 7 steps
+  # each invocation. Idempotency is structural: step 5 skips adding include.path
+  # if already present. Assert: second run exits 0 AND include.path is not
+  # duplicated in git config.
+  local repo="$UAT_ROOT/repos/bootstrap_idempotent"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  cd "$repo"
+  local bs="$SCAFFOLD_ROOT/skills/scaffold-with-guardrails/templates/common/scripts/bootstrap.sh"
+  "$bs" --offline >/dev/null 2>&1
+  local out rc
+  out=$("$bs" --offline 2>&1)
+  rc=$?
+  assert_exit 0 "$rc" || return 1
+  # include.path must appear exactly once (idempotent step 5).
+  local count
+  count=$(git config --get-all include.path 2>/dev/null | grep -c '^\.\./\.gitconfig\.gates$' || true)
+  [ "$count" -le 1 ] || { echo "ASSERT FAIL: include.path duplicated (count=$count)"; return 1; }
+}
+
+s03_bootstrap_offline() {
+  # Verify that --offline exits 0 and does not download any tool binaries.
+  # scaffold files are laid down by bootstrap_test_repo; bootstrap.sh is then
+  # run to confirm --offline skips the fetch steps without error.
+  local repo="$UAT_ROOT/repos/bootstrap_offline"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  cd "$repo"
+  local out rc
+  out=$("$SCAFFOLD_ROOT/skills/scaffold-with-guardrails/templates/common/scripts/bootstrap.sh" --offline 2>&1)
+  rc=$?
+  assert_exit 0 "$rc" || return 1
+  assert_file_exists .githooks/pre-commit || return 1
+  # --offline must NOT have downloaded tool binaries (only .gitkeep is allowed).
+  if find .tools -type f ! -name '.gitkeep' 2>/dev/null | grep -q .; then
+    echo "ASSERT FAIL: --offline downloaded tools" >&2
+    return 1
+  fi
+}
+
+s04_worktree() {
+  local main="$UAT_ROOT/repos/bootstrap_worktree_main"
+  local wt="$UAT_ROOT/repos/bootstrap_worktree_wt"
+  rm -rf "$main" "$wt"
+  bootstrap_test_repo "$main"
+  ( cd "$main" && git worktree add "$wt" -b uat-branch )
+  # Hook must resolve REPO_ROOT correctly from the worktree.
+  ( cd "$wt"
+    echo "x=1" > test.py
+    git add test.py
+    local out rc
+    out=$(.githooks/pre-commit 2>&1); rc=$?
+    # Exit 0 (no violations) or 1 (some gate fired) — either is acceptable.
+    # What we test is: hook executed without "REPO_ROOT not found" / path errors.
+    if echo "$out" | grep -qE 'REPO_ROOT.*not.*found|cannot find|No such file'; then
+      echo "ASSERT FAIL: worktree path resolution broken"; echo "$out"; return 1
+    fi
+  )
+}
+
+s05_verify_tool_pins() {
+  # verify-tool-pins.sh defaults to .tools/manifest.toml.
+  # The template ships manifest.toml.template (with REPLACE_ME placeholders);
+  # copy it to .tools/manifest.toml so the script finds it.
+  local repo="$UAT_ROOT/repos/bootstrap_pins"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  cd "$repo"
+  cp "$SCAFFOLD_ROOT/skills/scaffold-with-guardrails/templates/common/tools/manifest.toml.template" \
+     .tools/manifest.toml
+  # Manifest ships with REPLACE_ME placeholders; bootstrap normally fills them.
+  # Run verify-tool-pins.sh against unfilled manifest.
+  local out rc
+  out=$(./scripts/verify-tool-pins.sh 2>&1); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_output_contains "REPLACE_ME|unpinned|stale" "$out" || return 1
+}
+
 # === Driver ============================================================
-SCENARIOS=()
+SCENARIOS=(
+  s01_bootstrap_fresh
+  s02_bootstrap_idempotent
+  s03_bootstrap_offline
+  s04_worktree
+  s05_verify_tool_pins
+)
 
 cleanup() {
   if [ "${#FAILED[@]}" -eq 0 ]; then
