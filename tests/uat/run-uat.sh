@@ -411,6 +411,118 @@ s11_complexity_standard_warn() {
   fi
 }
 
+s12_complexity_regulated_fail() {
+  # 60-complexity is optional tier → error (not warn) under regulated profile.
+  # lizard exits 1 (findings); gate must exit 1 (blocking failure).
+  local repo="$UAT_ROOT/repos/gates_complexity_regulated"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo" regulated
+  # Gate under test: lizard exits 1 (findings → error in regulated).
+  install_repo_tool "$repo" lizard 1 "function complexity exceeds threshold"
+  # Bystander stubs (exit 0 = pass) isolate the complexity gate.
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" semgrep  0
+  install_repo_tool "$repo" scc      0
+  install_repo_tool "$repo" trivy    0
+  # Stage a .py file to satisfy the self-skip check.
+  printf 'def f(): pass\n' > "$repo/module.py"
+  ( cd "$repo" && git add module.py )
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_output_contains "60-complexity|lizard" "$out" || return 1
+}
+
+s13_file_size() {
+  # 61-file-size is optional tier → warn (not block) under standard profile.
+  # scc stub emits JSON reporting a file with 9999 LOC (> default max 400).
+  # Gate emits WARN but pre-commit exits 0.
+  local repo="$UAT_ROOT/repos/gates_file_size"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"   # default profile = standard
+  # Custom scc stub: emits JSON with a violating file before exiting 0.
+  mkdir -p "$repo/.tools"
+  cat > "$repo/.tools/scc" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+[{"Files":[{"Location":"big.py","Code":9999}]}]
+JSON
+exit 0
+STUB
+  chmod +x "$repo/.tools/scc"
+  # Bystander stubs so other gates don't block.
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" semgrep  0
+  install_repo_tool "$repo" lizard   0
+  # Stage a .py file to satisfy staged-source self-skip checks.
+  printf 'def f(): pass\n' > "$repo/big.py"
+  ( cd "$repo" && git add big.py )
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 0 "$rc" || return 1
+  assert_output_contains "61-file-size|WARN" "$out" || return 1
+}
+
+s14_tests_integration() {
+  # 10-tests-integration is a pre-push gate (critical tier).
+  # has_python_integration: needs pyproject.toml + tests/ directory.
+  # pytest stub exits 1 (failing tests, not 5 = "no tests") → gate exits 1.
+  local repo="$UAT_ROOT/repos/gates_tests_integration"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  # Satisfy has_python_integration: needs pyproject.toml + tests/ dir.
+  printf '[build-system]\nrequires = []\n' > "$repo/pyproject.toml"
+  mkdir -p "$repo/tests"
+  ( cd "$repo" && git add pyproject.toml && git add tests/ 2>/dev/null || true )
+  # Stub pytest exits 1 → test failures (not "no tests collected").
+  install_stub_tool pytest 1 "FAILED tests/test_integration.py::test_api"
+  # Invoke pre-push directly (no stdin needed — dispatcher does not read it).
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-push </dev/null 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_output_contains "10-tests-integration|pytest" "$out" || return 1
+}
+
+s15_deps_deep() {
+  # 20-deps-deep is a pre-push gate (critical tier).
+  # trivy resolved via .tools/trivy; exits 1 (HIGH/CRITICAL findings) → gate exits 1.
+  local repo="$UAT_ROOT/repos/gates_deps_deep"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  install_repo_tool "$repo" trivy 1 "HIGH vulnerability found"
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-push </dev/null 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_output_contains "20-deps-deep|trivy" "$out" || return 1
+}
+
+s16_conventional_commit() {
+  # SPEC DEVIATION: 10-conventional is warn-only — it always exits 0 (see gate line 18).
+  # The gate emits a WARN for non-conventional subjects but never blocks the commit.
+  # We test the WARN behavior: a bad subject → WARN in output, commit succeeds (exit 0).
+  #
+  # Strategy to isolate commit-msg gate:
+  #   - Stage only a non-.py file (README.md) so pre-commit's source-gated gates
+  #     self-skip (format/static-analysis/complexity/file-size need staged .py files).
+  #   - Install passing bystander repo-tool stubs for gitleaks + trivy (pre-commit scans).
+  #   - pre-commit exits 0 → commit proceeds to commit-msg hook.
+  local repo="$UAT_ROOT/repos/gates_conventional"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+  # Bystander stubs: gates that fire regardless of file type.
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" trivy    0
+  # Stage a non-.py file to avoid triggering source-gated checks.
+  printf '# project\n' > "$repo/README.md"
+  ( cd "$repo" && git add README.md )
+  # Commit with a non-conventional subject; capture combined output.
+  # commit.gpgsign=false avoids GPG prompts in CI.
+  local out rc
+  out=$( cd "$repo" && git -c commit.gpgsign=false commit -m "wip messing around" 2>&1 ); rc=$?
+  assert_exit 0 "$rc" || return 1
+  assert_output_contains "conventional|WARN" "$out" || return 1
+}
+
 # === Driver ============================================================
 SCENARIOS=(
   s01_bootstrap_fresh
@@ -424,6 +536,11 @@ SCENARIOS=(
   s09_deps
   s10_tests_unit
   s11_complexity_standard_warn
+  s12_complexity_regulated_fail
+  s13_file_size
+  s14_tests_integration
+  s15_deps_deep
+  s16_conventional_commit
 )
 
 cleanup() {
