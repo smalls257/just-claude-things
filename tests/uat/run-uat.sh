@@ -523,6 +523,125 @@ s16_conventional_commit() {
   assert_output_contains "conventional|WARN" "$out" || return 1
 }
 
+# === Trailer group =====================================================
+
+s17_trailer_yes() {
+  # Verified: yes — every gate runs and passes; SKIPPED and FAILED both empty.
+  #
+  # Gates that fire and their trigger conditions:
+  #   10-format      : pyproject.toml with [tool.ruff] → PATH stub ruff exits 0
+  #   20-secrets     : always → .tools/gitleaks exits 0
+  #   30-static-analysis : staged .py file → .tools/semgrep exits 0
+  #   40-deps        : staged pyproject.toml (manifest) → .tools/trivy exits 0
+  #   50-tests-unit  : pyproject.toml + tests/ dir → PATH stub pytest exits 0
+  #   60-complexity  : staged .py file → .tools/lizard exits 0
+  #   61-file-size   : staged .py file → .tools/scc emits empty JSON [] exits 0
+  # None must self-skip (exit 77), so all stack detectors must see their preconditions.
+  local repo="$UAT_ROOT/repos/trailer_yes"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+
+  # pyproject.toml: satisfies has_ruff_format (10-format) + has_python_tests (50-tests-unit)
+  # + 40-deps manifest detector. Needs [tool.ruff] section AND [build-system] or similar.
+  printf '[tool.ruff]\n\n[build-system]\nrequires = []\n' > "$repo/pyproject.toml"
+
+  # tests/ dir: satisfies has_python_tests so 50-tests-unit fires instead of self-skipping.
+  mkdir -p "$repo/tests"
+
+  # .semgrep dir: 30-static-analysis passes --config .semgrep; stub ignores args but dir
+  # is created here for fidelity. Gate does not require the dir to exist; stub handles it.
+  mkdir -p "$repo/.semgrep"
+
+  # Stage .py file (triggers 30-static-analysis, 60-complexity, 61-file-size)
+  # and pyproject.toml (triggers 40-deps via manifest detection).
+  printf 'def hello(): pass\n' > "$repo/app.py"
+  ( cd "$repo" && git add pyproject.toml app.py ) || return 1
+
+  # PATH stubs (tools resolved via PATH).
+  install_stub_tool ruff   0
+  install_stub_tool pytest 0
+
+  # Repo-tool stubs (tools resolved via .tools/<name>).
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" semgrep  0
+  install_repo_tool "$repo" trivy    0
+  install_repo_tool "$repo" lizard   0
+
+  # scc is special: 61-file-size parses JSON output. Empty array → no violators → pass.
+  cat > "$repo/.tools/scc" <<'STUB'
+#!/usr/bin/env bash
+echo '[]'
+exit 0
+STUB
+  chmod +x "$repo/.tools/scc"
+
+  # Commit with a conventional subject so 10-conventional (commit-msg gate) stays quiet.
+  local out rc
+  out=$( cd "$repo" && git -c commit.gpgsign=false commit -m "feat: trailer test" 2>&1 ); rc=$?
+  assert_exit 0 "$rc" || return 1
+  ( cd "$repo" && assert_trailer "yes" ) || return 1
+}
+
+s18_trailer_no() {
+  # Verified: no — --no-verify skips ALL hooks (pre-commit AND commit-msg).
+  # The 20-verified-trailer gate in commit-msg never runs → no trailer appended.
+  local repo="$UAT_ROOT/repos/trailer_no"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+
+  printf 'placeholder\n' > "$repo/README.md"
+  ( cd "$repo" && git add README.md ) || return 1
+
+  git -C "$repo" -c commit.gpgsign=false commit --no-verify -m "feat: bypass" >/dev/null 2>&1
+  ( cd "$repo" && assert_no_trailer ) || return 1
+}
+
+s19_trailer_partial() {
+  # Verified: partial — pre-commit runs, at least one gate ends up in SKIPPED,
+  # zero gates in FAILED.
+  #
+  # Strategy: stage a .py file so source-gated gates fire (not self-skip).
+  # Force 20-secrets into SKIPPED via GATES_SKIP=secrets.
+  # Install passing stubs for every other gate that will fire so none fail.
+  local repo="$UAT_ROOT/repos/trailer_partial"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"
+
+  # pyproject.toml with [tool.ruff]: triggers 10-format (ruff stub) + 40-deps (trivy stub).
+  printf '[tool.ruff]\n\n[build-system]\nrequires = []\n' > "$repo/pyproject.toml"
+
+  # tests/ dir: triggers 50-tests-unit (pytest stub).
+  mkdir -p "$repo/tests"
+
+  # Stage .py + pyproject.toml.
+  printf 'def hello(): pass\n' > "$repo/app.py"
+  ( cd "$repo" && git add pyproject.toml app.py ) || return 1
+
+  # PATH stubs.
+  install_stub_tool ruff   0
+  install_stub_tool pytest 0
+
+  # Repo-tool stubs (gitleaks skipped via GATES_SKIP, but stub present for safety).
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" semgrep  0
+  install_repo_tool "$repo" trivy    0
+  install_repo_tool "$repo" lizard   0
+
+  # scc: must emit valid JSON so 61-file-size parses cleanly.
+  cat > "$repo/.tools/scc" <<'STUB'
+#!/usr/bin/env bash
+echo '[]'
+exit 0
+STUB
+  chmod +x "$repo/.tools/scc"
+
+  # GATES_SKIP=secrets forces 20-secrets into SKIPPED → trailer becomes "partial".
+  local out rc
+  out=$( cd "$repo" && GATES_SKIP=secrets git -c commit.gpgsign=false commit -m "feat: partial test" 2>&1 ); rc=$?
+  assert_exit 0 "$rc" || return 1
+  ( cd "$repo" && assert_trailer "partial" ) || return 1
+}
+
 # === Driver ============================================================
 SCENARIOS=(
   s01_bootstrap_fresh
@@ -541,6 +660,9 @@ SCENARIOS=(
   s14_tests_integration
   s15_deps_deep
   s16_conventional_commit
+  s17_trailer_yes
+  s18_trailer_no
+  s19_trailer_partial
 )
 
 cleanup() {
