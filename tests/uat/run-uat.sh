@@ -755,6 +755,80 @@ s23_subdir_hook() {
   fi
 }
 
+# === Profile group =====================================================
+
+s24_profile_prototype() {
+  # profile=prototype: optional-tier gates (60-complexity, 61-file-size) exit 77
+  # (tier=off) before reaching the tool — no lizard/scc stub needed.
+  # Bystander stubs required: 20-secrets (gitleaks) and 30-static-analysis (semgrep).
+  # 40-deps self-skips (no manifest staged — only a .py file staged).
+  local repo="$UAT_ROOT/repos/profile_prototype"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo" prototype
+  # Bystander stubs: gates that fire on any staged content.
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" semgrep  0
+  # Stage a .py file only (no manifest → 40-deps self-skips).
+  printf 'def f(): pass\n' > "$repo/module.py"
+  ( cd "$repo" && git add module.py ) || return 1
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 0 "$rc" || return 1
+  ( cd "$repo" && assert_gate_skipped "complexity" ) || return 1
+  ( cd "$repo" && assert_gate_skipped "file-size"  ) || return 1
+}
+
+s25_profile_standard() {
+  # profile=standard (default): optional-tier gate 60-complexity → warn, not error.
+  # lizard exits 1 (findings); pre-commit must exit 0 and emit WARN.
+  # FAILED= line in gates-last-run must be empty (no blocking failures).
+  local repo="$UAT_ROOT/repos/profile_standard"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo"   # default profile = standard
+  install_repo_tool "$repo" lizard   1 "function complexity exceeds threshold"
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" semgrep  0
+  install_repo_tool "$repo" scc      0
+  printf 'def f(): pass\n' > "$repo/module.py"
+  ( cd "$repo" && git add module.py ) || return 1
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 0 "$rc" || return 1
+  assert_output_contains "WARN|60-complexity" "$out" || return 1
+  assert_file_exists "$repo/.git/gates-last-run" || return 1
+  local failed_line
+  failed_line=$(grep '^FAILED=' "$repo/.git/gates-last-run")
+  if [ "$failed_line" != "FAILED=" ]; then
+    echo "ASSERT FAIL: expected empty FAILED= in gates-last-run, got: $failed_line" >&2
+    return 1
+  fi
+}
+
+s26_profile_regulated() {
+  # profile=regulated: optional-tier gate 60-complexity → error, not warn.
+  # lizard exits 1 (findings); pre-commit must exit 1 and FAILED= records complexity.
+  local repo="$UAT_ROOT/repos/profile_regulated"
+  rm -rf "$repo"
+  bootstrap_test_repo "$repo" regulated
+  install_repo_tool "$repo" lizard   1 "function complexity exceeds threshold"
+  install_repo_tool "$repo" gitleaks 0
+  install_repo_tool "$repo" semgrep  0
+  install_repo_tool "$repo" scc      0
+  install_repo_tool "$repo" trivy    0
+  printf 'def f(): pass\n' > "$repo/module.py"
+  ( cd "$repo" && git add module.py ) || return 1
+  local out rc
+  out=$( cd "$repo" && .githooks/pre-commit 2>&1 ); rc=$?
+  assert_exit 1 "$rc" || return 1
+  assert_output_contains "60-complexity" "$out" || return 1
+  assert_file_exists "$repo/.git/gates-last-run" || return 1
+  if ! grep -qE '^FAILED=.*complexity' "$repo/.git/gates-last-run"; then
+    echo "ASSERT FAIL: complexity not in FAILED= in gates-last-run" >&2
+    cat "$repo/.git/gates-last-run" >&2
+    return 1
+  fi
+}
+
 # === Driver ============================================================
 SCENARIOS=(
   s01_bootstrap_fresh
@@ -780,6 +854,9 @@ SCENARIOS=(
   s21_lock_concurrent
   s22_lock_stale_takeover
   s23_subdir_hook
+  s24_profile_prototype
+  s25_profile_standard
+  s26_profile_regulated
 )
 
 cleanup() {
