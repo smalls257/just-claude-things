@@ -242,7 +242,7 @@ threshold. Wire it into the test gate by editing the pre-commit `50-tests-unit`
 script (after scaffolding) to invoke:
 
 ```bash
-dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings --no-restore
+dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings
 ```
 
 Or add a CI-only check (preferred — keeps pre-commit fast):
