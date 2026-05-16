@@ -34,6 +34,10 @@ layer rules accordingly — but do not switch silently.
 ```bash
 APP=ExpensePortal
 APP_LOWER=expense-portal
+SCAFFOLD="$HOME/.claude/plugins/cache/.../skills/scaffold-with-guardrails"
+
+# Pin SDK first so all subsequent dotnet new commands respect it.
+cp "$SCAFFOLD/templates/csharp/global.json" .
 
 dotnet new sln -n "$APP"
 
@@ -124,6 +128,7 @@ dotnet add tests/"$APP".Tests.Unit/"$APP".Tests.Unit.csproj package NetArchTest.
 After `dotnet new`, the skill creates these files (generators don't produce them):
 
 - `.gitignore` (root) — copied from `templates/csharp/gitignore`
+- `global.json` (root) — pins SDK; copied verbatim from `templates/csharp/global.json`
 - `Directory.Build.targets` (root) — semgrep gate before every build
 - `Directory.Packages.props` (root) — central package management
 - `.semgrep/<app-lower>/<layer>.yaml` — one per layer for architecture-direction rules (Domain/Application/Infrastructure/Persistence/Api/Service)
@@ -149,8 +154,6 @@ gate system from `templates/common/` and the .NET-conditional pieces from
 `templates/csharp/`:
 
 ```bash
-SCAFFOLD="$HOME/.claude/plugins/cache/.../skills/scaffold-with-guardrails"
-
 # Language-agnostic
 cp -R "$SCAFFOLD/templates/common/githooks"     .githooks
 cp -R "$SCAFFOLD/templates/common/scripts"      scripts
