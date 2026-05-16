@@ -159,8 +159,83 @@ After `dotnet new`, the skill creates these files (generators don't produce them
 - `.claude/hooks/{pre-commit,pre-push,stop-neg-audit}.sh` — copied from this skill (`chmod +x`)
 - `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference)
 - `src/<App>.{Api,Service}/Configuration/*Options.cs` — typed config + `ValidateOnStart` triad (one file per options group)
+- `src/<App>.{Api,Service}/appsettings.Development.json` — populated with the matching section for every options class so `ValidateOnStart` does not fail on first `dotnet run` (see "Companion settings" under the Options validation pattern)
 
 After `dotnet new webapi`, also **strip the weather-forecast boilerplate** from `src/<App>.Api/Program.cs` (and delete `src/<App>.Api/*.http`). The generated example would trip `quality.yaml` (DateTime.Now, Random) and is not part of the app.
+
+Replace `Program.cs` with the canonical skeleton below. It wires the
+OpenAPI spec (`/openapi/v1.json`), the Swagger UI page (`/swagger`, with
+a bare-prefix redirect so the URL is browser-friendly), a health probe
+(`/health`), and a root landing endpoint (`/`) that returns the machine
+name plus links to the other three — enough for a smoke test (`curl /`)
+to confirm the host boots, options bind, and the kestrel routing table
+is alive. Swagger UI and `MapOpenApi` are gated to the Development
+environment so production never serves the doc surface.
+
+Add the Swagger UI package reference to `src/<App>.Api/<App>.Api.csproj`
+alongside `Microsoft.AspNetCore.OpenApi`:
+
+```xml
+<PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+<PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" />
+```
+
+(The version is pinned in `Directory.Packages.props`. The package ships
+the static UI assets only — the OpenAPI document itself is still
+produced by `Microsoft.AspNetCore.OpenApi`, so there are no duplicate
+generators.)
+
+```csharp
+using <App>.Api.Configuration;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOpenApi();
+builder.Services.AddHealthChecks();
+
+builder.Services
+    .AddOptions<DatabaseOptions>()
+    .Bind(builder.Configuration.GetSection(DatabaseOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.UseSwaggerUI(opts =>
+    {
+        opts.SwaggerEndpoint("/openapi/v1.json", "v1");
+        opts.RoutePrefix = "swagger";
+    });
+    app.MapGet("/swagger", () => Results.Redirect("/swagger/index.html"))
+        .ExcludeFromDescription();
+}
+
+app.UseHttpsRedirection();
+app.MapHealthChecks("/health");
+
+app.MapGet("/", () => Results.Ok(new
+{
+    machine = Environment.MachineName,
+    openapi = "/openapi/v1.json",
+    swagger = "/swagger",
+    health = "/health",
+}));
+
+app.Run();
+```
+
+`UseSwaggerUI` serves at `/swagger/index.html`; the `MapGet("/swagger")`
+redirect lets developers hit the bare prefix in a browser without the
+405/404 dance. `ExcludeFromDescription()` keeps the redirect out of the
+OpenAPI document.
+
+For each additional `*Options` class, repeat the `AddOptions<T>().Bind().
+ValidateDataAnnotations().ValidateOnStart()` triad and extend the `/`
+payload with any new probe routes — keep `/` as the single source of
+truth for "what routes does this service expose".
 
 After `dotnet new worker`, the default `Program.cs` is a minimal `Host.CreateApplicationBuilder` shell — leave it; the user wires MediatR/MassTransit at composition time. Add the same `AssemblyMarker.cs` and `AGENTS.md` pattern under `src/<App>.Service/`.
 
@@ -277,6 +352,58 @@ builder.Services
     .Bind(builder.Configuration.GetSection(DatabaseOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
+```
+
+### Companion settings — required for the host to start
+
+`ValidateOnStart()` throws at process start if the bound section is missing
+or fails DataAnnotations. That is the point of the doctrine, but it also
+means a freshly-scaffolded host will refuse to run until each options
+section has a value source. For every `<App>.{Api,Service}/Configuration/
+*Options.cs` the skill writes, also wire a corresponding entry in
+`appsettings.Development.json` so `dotnet run` works out of the box.
+
+For `DatabaseOptions` (`Database` section):
+
+```json
+{
+  "Logging": { "LogLevel": { "Default": "Information", "Microsoft.AspNetCore": "Warning" } },
+  "Database": {
+    "ConnectionString": "Host=localhost;Database=<app_lower>;Username=postgres;Password=postgres",
+    "CommandTimeoutSeconds": 30
+  }
+}
+```
+
+`appsettings.json` (loaded in every env) stays free of secrets — only
+non-sensitive defaults belong there. Production values flow in via env
+vars (`Database__ConnectionString=...`) or a secret store; the local dev
+placeholder above exists solely so the first `dotnet run` succeeds and so
+that integration tests have a deterministic target.
+
+For per-developer secrets that should not be committed, prefer
+`dotnet user-secrets` over editing `appsettings.Development.json`:
+
+```bash
+dotnet user-secrets init --project src/<App>.Api/<App>.Api.csproj
+dotnet user-secrets set "Database:ConnectionString" "Host=..." \
+  --project src/<App>.Api/<App>.Api.csproj
+```
+
+`UserSecrets` only loads in the `Development` environment by default,
+which is exactly the seam intended here.
+
+**Environment-loading gotcha.** `appsettings.Development.json` only loads
+when `ASPNETCORE_ENVIRONMENT=Development`. `dotnet run` (no flags) picks
+that up from `Properties/launchSettings.json` (the `http` profile sets
+it). But `dotnet run --no-launch-profile` — common in CI scripts and
+smoke tests — defaults to `Production` and will trip `ValidateOnStart`
+because `appsettings.json` deliberately holds no DB section. For
+headless runs, set the env var explicitly:
+
+```bash
+ASPNETCORE_ENVIRONMENT=Development \
+  dotnet run --project src/<App>.Api/<App>.Api.csproj --no-launch-profile
 ```
 
 ## Coverage threshold (gate-aware)
