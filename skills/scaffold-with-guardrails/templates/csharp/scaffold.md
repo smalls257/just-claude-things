@@ -129,6 +129,7 @@ dotnet add tests/"$APP".Tests.Unit/"$APP".Tests.Unit.csproj package NetArchTest.
 After `dotnet new`, the skill creates these files (generators don't produce them):
 
 - `.gitignore` (root) — copied from `templates/csharp/gitignore`
+- `.editorconfig` (root) — shared IDE formatting baseline + C# diagnostic severities; copied from `templates/common/.editorconfig`
 - `global.json` (root) — pins SDK; copied verbatim from `templates/csharp/global.json`
 - `Directory.Build.props` (root) — TWAE on src, lockfile-mode (CI), InvariantGlobalization on hosts; copied from `templates/csharp/Directory.Build.props`
 - `Directory.Build.targets` (root) — semgrep gate before every build
@@ -195,6 +196,7 @@ gate system from `templates/common/` and the .NET-conditional pieces from
 
 ```bash
 # Language-agnostic
+cp "$SCAFFOLD/templates/common/.editorconfig" .
 cp -R "$SCAFFOLD/templates/common/githooks"     .githooks
 cp -R "$SCAFFOLD/templates/common/scripts"      scripts
 cp    "$SCAFFOLD/templates/common/gitconfig-gates"     .gitconfig.gates
