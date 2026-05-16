@@ -45,6 +45,14 @@ cp "$SCAFFOLD/templates/csharp/global.json" .
 cp "$SCAFFOLD/templates/csharp/Directory.Build.props" .
 cp "$SCAFFOLD/templates/csharp/Directory.Packages.props" .
 
+# .gitignore must land before `dotnet new` runs — every `dotnet new` and
+# every subsequent build/test creates bin/, obj/, TestResults/ under each
+# project. Without this copy, `git status` shows ~550 untracked artifacts
+# the moment the first build finishes. Source file is named `gitignore`
+# (no leading dot) in templates/ so it ships through filesystems / git
+# operations that strip dotfiles; rename on copy.
+cp "$SCAFFOLD/templates/csharp/gitignore" .gitignore
+
 dotnet new sln -n "$APP"
 
 # Core layers (always)
