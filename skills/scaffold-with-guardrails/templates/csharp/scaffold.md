@@ -37,8 +37,13 @@ APP_LOWER=expense-portal
 SCAFFOLD="$HOME/.claude/plugins/cache/.../skills/scaffold-with-guardrails"
 
 # Pin SDK first so all subsequent dotnet new commands respect it.
+# Directory.Packages.props MUST land before any `dotnet add package` runs —
+# otherwise `dotnet add` resolves the LATEST version and writes an explicit
+# Version="…" attribute into each csproj, silently bypassing the pinned
+# MediatR 12.4.1 / MassTransit 8.3.4 (both have post-MIT releases now).
 cp "$SCAFFOLD/templates/csharp/global.json" .
 cp "$SCAFFOLD/templates/csharp/Directory.Build.props" .
+cp "$SCAFFOLD/templates/csharp/Directory.Packages.props" .
 
 dotnet new sln -n "$APP"
 
@@ -60,6 +65,17 @@ dotnet new xunit    -n "$APP.Tests.Unit"        -o tests/"$APP".Tests.Unit
 dotnet new xunit    -n "$APP.Tests.Integration" -o tests/"$APP".Tests.Integration
 
 find . -name "*.csproj" | sort | xargs dotnet sln add
+
+# Strip Version="…" from generated csprojs. `dotnet new webapi|worker|xunit`
+# emits explicit versions for Microsoft.AspNetCore.OpenApi /
+# Microsoft.NET.Test.Sdk / xunit / xunit.runner.visualstudio / coverlet.collector,
+# which NU1008-fails immediately under ManagePackageVersionsCentrally=true.
+# Those IDs are pinned in Directory.Packages.props; removing the inline
+# versions lets central management take over. Note the macOS-portable
+# `sed -i.bak …` form — GNU sed accepts `-i` without an argument, BSD sed
+# does not. Deleting the `.bak` files after keeps the working tree clean.
+find src tests -name '*.csproj' -exec sed -i.bak 's/ Version="[^"]*"//g' {} +
+find src tests -name '*.csproj.bak' -delete
 
 # Dependency direction: Domain ← Application ← Infrastructure/Persistence
 dotnet add src/"$APP".Application/"$APP".Application.csproj \
@@ -88,8 +104,9 @@ for HOST in Api Service; do
 done
 
 # NuGet packages — pin MediatR + MassTransit to last MIT releases.
-# Use Directory.Packages.props for centralised versions; the dotnet add calls
-# here register the PackageReference (no version) in each csproj.
+# Directory.Packages.props (copied above) sets ManagePackageVersionsCentrally=true,
+# so the `dotnet add package` calls below register versionless PackageReferences
+# and pick up the pinned versions from Directory.Packages.props automatically.
 dotnet add src/"$APP".Domain/"$APP".Domain.csproj package CSharpFunctionalExtensions
 dotnet add src/"$APP".Application/"$APP".Application.csproj package CSharpFunctionalExtensions
 dotnet add src/"$APP".Application/"$APP".Application.csproj package MediatR
@@ -102,27 +119,12 @@ dotnet add src/"$APP".Service/"$APP".Service.csproj package MassTransit.RabbitMQ
 dotnet add tests/"$APP".Tests.Unit/"$APP".Tests.Unit.csproj package NetArchTest.Rules
 ```
 
-### Directory.Packages.props version pins (hand-written)
+### Directory.Packages.props version pins
 
-```xml
-<Project>
-  <PropertyGroup>
-    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageVersion Include="CSharpFunctionalExtensions" Version="3.6.0" />
-    <PackageVersion Include="Dapper" Version="2.1.66" />
-    <PackageVersion Include="Npgsql" Version="8.0.5" />
-    <!-- MediatR pinned: last MIT release before commercial pivot (Aug 2024). -->
-    <PackageVersion Include="MediatR" Version="12.4.1" />
-    <!-- MassTransit pinned: last MIT v8 release before commercial v9. -->
-    <PackageVersion Include="MassTransit" Version="8.3.4" />
-    <PackageVersion Include="MassTransit.RabbitMQ" Version="8.3.4" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.7" />
-    <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />
-  </ItemGroup>
-</Project>
-```
+Lives at `templates/csharp/Directory.Packages.props` — copied verbatim by the
+scaffold (see the `cp` at the top of the bash block above). MediatR and
+MassTransit are pinned to their last MIT releases; bumping them requires
+license review.
 
 ## Files the skill hand-writes after dotnet new
 
@@ -134,7 +136,7 @@ After `dotnet new`, the skill creates these files (generators don't produce them
 - `Directory.Build.props` (root) — TWAE on src, lockfile-mode (CI), InvariantGlobalization on hosts; copied from `templates/csharp/Directory.Build.props`
 - `coverlet.runsettings` (root) — coverage collection config + 70% threshold; copied from `templates/csharp/coverlet.runsettings`
 - `Directory.Build.targets` (root) — semgrep gate before every build
-- `Directory.Packages.props` (root) — central package management
+- `Directory.Packages.props` (root) — central package management with pinned MediatR/MassTransit MIT versions; copied from `templates/csharp/Directory.Packages.props`
 - `.semgrep/<app-lower>/<layer>.yaml` — one per layer for architecture-direction rules (Domain/Application/Infrastructure/Persistence/Api/Service)
 - `.semgrep/<app-lower>/security.yaml` — cross-cutting security baseline (hardcoded creds, SQL injection, weak crypto, BinaryFormatter, CORS misconfig — see `SEMGREP-RULE-COOKBOOK.md`)
 - `.semgrep/<app-lower>/quality.yaml` — code-quality baseline (empty catch, throw ex, Console.WriteLine, DateTime.Now, new HttpClient, logger interpolation, IServiceProvider injection)
@@ -153,6 +155,39 @@ After `dotnet new`, the skill creates these files (generators don't produce them
 After `dotnet new webapi`, also **strip the weather-forecast boilerplate** from `src/<App>.Api/Program.cs` (and delete `src/<App>.Api/*.http`). The generated example would trip `quality.yaml` (DateTime.Now, Random) and is not part of the app.
 
 After `dotnet new worker`, the default `Program.cs` is a minimal `Host.CreateApplicationBuilder` shell — leave it; the user wires MediatR/MassTransit at composition time. Add the same `AssemblyMarker.cs` and `AGENTS.md` pattern under `src/<App>.Service/`.
+
+**Also fix the generated `Worker.cs`.** `dotnet new worker` emits
+`_logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now)` which
+trips CA1848 (use compile-time logging delegates) and CA1727 (PascalCase
+placeholders) — both promoted to errors by `TreatWarningsAsErrors=true` on
+`src/`. Replace the `LogInformation` call with a `LoggerMessage` delegate so the
+first build is green:
+
+```csharp
+public sealed class Worker(ILogger<Worker> logger) : BackgroundService
+{
+    private static readonly Action<ILogger, DateTimeOffset, Exception?> LogHeartbeat =
+        LoggerMessage.Define<DateTimeOffset>(
+            LogLevel.Information,
+            new EventId(1, nameof(LogHeartbeat)),
+            "Worker running at: {Time}");
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                LogHeartbeat(logger, DateTimeOffset.Now, null);
+            }
+            await Task.Delay(1000, stoppingToken);
+        }
+    }
+}
+```
+
+Or strip the heartbeat body entirely if the worker has real work to do — the
+goal is just to keep the first build clean under TWAE.
 
 ## Lockfile generation (one-time after scaffold)
 
@@ -264,15 +299,18 @@ gate system from `templates/common/` and the .NET-conditional pieces from
 
 ```bash
 # Language-agnostic
+# Use `cp -R <src>/. <dst>/` (trailing `/.`) for directory copies — bare
+# `cp -R <src> <dst>` on macOS nests src *inside* dst on re-run, which makes
+# the scaffold non-idempotent and silently produces .githooks/githooks/...
 cp "$SCAFFOLD/templates/common/.editorconfig" .
-cp -R "$SCAFFOLD/templates/common/githooks"     .githooks
-cp -R "$SCAFFOLD/templates/common/scripts"      scripts
+mkdir -p .githooks       && cp -R "$SCAFFOLD/templates/common/githooks/."     .githooks/
+mkdir -p scripts         && cp -R "$SCAFFOLD/templates/common/scripts/."      scripts/
 cp    "$SCAFFOLD/templates/common/gitconfig-gates"     .gitconfig.gates
 cp    "$SCAFFOLD/templates/common/gates.toml.example"  .gates.toml
 mkdir -p .tools
 cp "$SCAFFOLD/templates/common/tools/manifest.toml.template" .tools/manifest.toml
 cp "$SCAFFOLD/templates/common/tools/gitignore-template"     .tools/.gitignore
-cp -R "$SCAFFOLD/templates/common/semgrep-packs"        .semgrep/packs
+mkdir -p .semgrep/packs  && cp -R "$SCAFFOLD/templates/common/semgrep-packs/." .semgrep/packs/
 cp    "$SCAFFOLD/templates/common/docs/BYPASS-POLICY.md"      BYPASS-POLICY.md
 cp    "$SCAFFOLD/templates/common/docs/BRANCH-PROTECTION.md"  BRANCH-PROTECTION.md
 mkdir -p docs
