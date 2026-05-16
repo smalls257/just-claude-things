@@ -158,7 +158,7 @@ will fail.
 
 ```bash
 dotnet restore --use-lock-file
-git add **/packages.lock.json
+git add -- '**/packages.lock.json'
 git commit -m "chore: lock NuGet transitives"
 ```
 
@@ -172,10 +172,20 @@ dotnet restore --force-evaluate
 ### CI environment variable
 
 `RestoreLockedMode` is conditioned on `$(CI) == 'true'`. GitHub Actions,
-GitLab CI, CircleCI, Travis, Azure DevOps, and most managed CI platforms
-set `CI=true` automatically. If your platform does not, set it explicitly
-in your build step (e.g. `env: CI: "true"` in the workflow) or invoke
-`dotnet restore -p:RestoreLockedMode=true` directly.
+GitLab CI, CircleCI, and Travis set `CI=true` automatically. **Azure
+DevOps does not** — it sets `TF_BUILD=True` instead. On Azure DevOps,
+either set `CI` explicitly in the pipeline:
+
+```yaml
+variables:
+  CI: 'true'
+```
+
+or invoke restore with the property directly:
+
+```bash
+dotnet restore -p:RestoreLockedMode=true
+```
 
 ## Gate system installation (always)
 
