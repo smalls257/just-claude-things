@@ -146,6 +146,7 @@ After `dotnet new`, the skill creates these files (generators don't produce them
 - `.claude/settings.json` — hook wiring
 - `.claude/hooks/{pre-commit,pre-push,stop-neg-audit}.sh` — copied from this skill (`chmod +x`)
 - `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference)
+- `src/<App>.{Api,Service}/Configuration/*Options.cs` — typed config + `ValidateOnStart` triad (one file per options group)
 
 After `dotnet new webapi`, also **strip the weather-forecast boilerplate** from `src/<App>.Api/Program.cs` (and delete `src/<App>.Api/*.http`). The generated example would trip `quality.yaml` (DateTime.Now, Random) and is not part of the app.
 
@@ -187,6 +188,50 @@ or invoke restore with the property directly:
 
 ```bash
 dotnet restore -p:RestoreLockedMode=true
+```
+
+## Options validation pattern (hand-written by skill per host)
+
+Every typed configuration class in `<App>.Api/Configuration/` or
+`<App>.Service/Configuration/` must follow this triad:
+
+1. POCO with `DataAnnotations` constraints (`[Required]`, `[Range]`, etc.)
+2. `services.AddOptions<T>().Bind(section).ValidateDataAnnotations().ValidateOnStart()`
+3. Consumers inject `IOptions<T>` / `IOptionsSnapshot<T>` — never `IConfiguration`
+
+Why: surfaces config errors at process start, not the first request.
+Tied to the Sensor principle (failures visible at the boundary, not buried).
+
+Example:
+
+`src/<App>.Api/Configuration/DatabaseOptions.cs`:
+
+```csharp
+using System.ComponentModel.DataAnnotations;
+
+namespace <App>.Api.Configuration;
+
+public sealed class DatabaseOptions
+{
+    public const string SectionName = "Database";
+
+    [Required]
+    [MinLength(10)]
+    public string ConnectionString { get; init; } = string.Empty;
+
+    [Range(1, 300)]
+    public int CommandTimeoutSeconds { get; init; } = 30;
+}
+```
+
+`src/<App>.Api/Program.cs` (wiring):
+
+```csharp
+builder.Services
+    .AddOptions<DatabaseOptions>()
+    .Bind(builder.Configuration.GetSection(DatabaseOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 ```
 
 ## Gate system installation (always)
