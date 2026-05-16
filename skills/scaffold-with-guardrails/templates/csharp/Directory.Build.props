@@ -1,0 +1,31 @@
+<Project>
+  <!-- Apply to every project under the root unless overridden. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- Reproducible restore: requires committed packages.lock.json -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Honor RestoreLockedMode only in CI by default to keep local dev unblocked. -->
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+  </PropertyGroup>
+
+  <!-- Treat warnings as errors on src/ — keeps the warning budget at zero. -->
+  <PropertyGroup Condition="$(MSBuildProjectDirectory.Contains('src'))">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Tests need leniency for fluent assertion / xunit warnings. -->
+    <!-- NU1507: multiple NuGet sources without source-mapping — environment quirk,
+         not a code defect. Keep as warning so CI with a single source is unaffected
+         and local dev with corporate + nuget.org feeds is not blocked. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1507</WarningsNotAsErrors>
+  </PropertyGroup>
+
+  <!-- Hosts (Api, Service) ship with InvariantGlobalization on by default.
+       Override on a per-host basis if real i18n is required. -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Api')) Or $(MSBuildProjectName.EndsWith('.Service'))">
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+</Project>
