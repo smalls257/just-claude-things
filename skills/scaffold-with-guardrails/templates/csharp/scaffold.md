@@ -132,6 +132,7 @@ After `dotnet new`, the skill creates these files (generators don't produce them
 - `.editorconfig` (root) — shared IDE formatting baseline + C# diagnostic severities; copied from `templates/common/.editorconfig`
 - `global.json` (root) — pins SDK; copied verbatim from `templates/csharp/global.json`
 - `Directory.Build.props` (root) — TWAE on src, lockfile-mode (CI), InvariantGlobalization on hosts; copied from `templates/csharp/Directory.Build.props`
+- `coverlet.runsettings` (root) — coverage collection config + 70% threshold; copied from `templates/csharp/coverlet.runsettings`
 - `Directory.Build.targets` (root) — semgrep gate before every build
 - `Directory.Packages.props` (root) — central package management
 - `.semgrep/<app-lower>/<layer>.yaml` — one per layer for architecture-direction rules (Domain/Application/Infrastructure/Persistence/Api/Service)
@@ -234,6 +235,26 @@ builder.Services
     .ValidateOnStart();
 ```
 
+## Coverage threshold (gate-aware)
+
+`coverlet.runsettings` is generated at repo root with a 70% line/branch/method
+threshold. Wire it into the test gate by editing the pre-commit `50-tests-unit`
+script (after scaffolding) to invoke:
+
+```bash
+dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings --no-restore
+```
+
+Or add a CI-only check (preferred — keeps pre-commit fast):
+
+```yaml
+- name: Coverage gate
+  run: dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings
+```
+
+Tune the `<Threshold>` value as the suite matures. Mutation testing (Stryker)
+covers the "tests run but don't assert" gap that line coverage misses.
+
 ## Gate system installation (always)
 
 After `dotnet new` steps complete, the skill installs the language-agnostic
@@ -264,6 +285,7 @@ cp "$SCAFFOLD/templates/common/github-workflows/tools-pin-check.yml"          .g
 # .NET-conditional
 cp "$SCAFFOLD/templates/csharp/github-workflows/stryker-nightly.yml" .github/workflows/
 cp "$SCAFFOLD/templates/csharp/stryker-config.json" .
+cp "$SCAFFOLD/templates/csharp/coverlet.runsettings" .
 
 # Make executables
 chmod +x .githooks/pre-commit .githooks/pre-push .githooks/commit-msg
