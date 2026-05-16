@@ -144,6 +144,7 @@ After `dotnet new`, the skill creates these files (generators don't produce them
 - `CLAUDE.md` (root) — from `CLAUDE-MD-TEMPLATE.md`, embeds Six Principles + Violation Guide inline (scaffolded repos are self-contained — do not rely on the global CLAUDE.md being present)
 - `src/<App>.<Layer>/AGENTS.md` — from `AGENTS-MD-TEMPLATE.md`, one per layer
 - `.github/PULL_REQUEST_TEMPLATE.md` — Six Principles + gates checklist; copied from `templates/common/.github/PULL_REQUEST_TEMPLATE.md`
+- `.github/workflows/openapi-diff.yml.disabled` — OpenAPI contract diff stub via oasdiff; copied from `templates/csharp/github-workflows/openapi-diff.yml.disabled` (rename to `.yml` after wiring spec gen)
 - `.claude/settings.json` — hook wiring
 - `.claude/hooks/{pre-commit,pre-push,stop-neg-audit}.sh` — copied from this skill (`chmod +x`)
 - `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference)
@@ -284,6 +285,7 @@ cp "$SCAFFOLD/templates/common/github-workflows/tools-pin-check.yml"          .g
 
 # .NET-conditional
 cp "$SCAFFOLD/templates/csharp/github-workflows/stryker-nightly.yml" .github/workflows/
+cp "$SCAFFOLD/templates/csharp/github-workflows/openapi-diff.yml.disabled" .github/workflows/
 cp "$SCAFFOLD/templates/csharp/stryker-config.json" .
 cp "$SCAFFOLD/templates/csharp/coverlet.runsettings" .
 
