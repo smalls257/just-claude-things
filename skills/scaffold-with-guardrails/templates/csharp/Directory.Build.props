@@ -11,16 +11,20 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <!-- Honor RestoreLockedMode only in CI by default to keep local dev unblocked. -->
     <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+
+    <!-- NU1507: multiple NuGet sources without source-mapping is a restore-time
+         environment quirk (corporate + nuget.org feeds), not a code defect.
+         Keep as warning repo-wide so CI with a single source is unaffected
+         and local dev with multiple feeds is not blocked. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1507</WarningsNotAsErrors>
   </PropertyGroup>
 
-  <!-- Treat warnings as errors on src/ — keeps the warning budget at zero. -->
-  <PropertyGroup Condition="$(MSBuildProjectDirectory.Contains('src'))">
+  <!-- Treat warnings as errors on src/ projects only.
+       Path-boundary match ('/src/' after normalising '\') avoids false
+       positives on names like 'src-utils'. Project-name guards exclude
+       any '.Tests' / '.Tests.*' project that lives under src/. -->
+  <PropertyGroup Condition="$(MSBuildProjectDirectory.Replace('\','/').Contains('/src/')) And !$(MSBuildProjectName.EndsWith('.Tests')) And !$(MSBuildProjectName.Contains('.Tests.'))">
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <!-- Tests need leniency for fluent assertion / xunit warnings. -->
-    <!-- NU1507: multiple NuGet sources without source-mapping — environment quirk,
-         not a code defect. Keep as warning so CI with a single source is unaffected
-         and local dev with corporate + nuget.org feeds is not blocked. -->
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1507</WarningsNotAsErrors>
   </PropertyGroup>
 
   <!-- Hosts (Api, Service) ship with InvariantGlobalization on by default.
