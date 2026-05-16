@@ -38,6 +38,7 @@ SCAFFOLD="$HOME/.claude/plugins/cache/.../skills/scaffold-with-guardrails"
 
 # Pin SDK first so all subsequent dotnet new commands respect it.
 cp "$SCAFFOLD/templates/csharp/global.json" .
+cp "$SCAFFOLD/templates/csharp/Directory.Build.props" .
 
 dotnet new sln -n "$APP"
 
@@ -129,6 +130,7 @@ After `dotnet new`, the skill creates these files (generators don't produce them
 
 - `.gitignore` (root) — copied from `templates/csharp/gitignore`
 - `global.json` (root) — pins SDK; copied verbatim from `templates/csharp/global.json`
+- `Directory.Build.props` (root) — TWAE on src, lockfile-mode (CI), InvariantGlobalization on hosts; copied from `templates/csharp/Directory.Build.props`
 - `Directory.Build.targets` (root) — semgrep gate before every build
 - `Directory.Packages.props` (root) — central package management
 - `.semgrep/<app-lower>/<layer>.yaml` — one per layer for architecture-direction rules (Domain/Application/Infrastructure/Persistence/Api/Service)
