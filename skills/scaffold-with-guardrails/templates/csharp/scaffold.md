@@ -310,7 +310,28 @@ cp    "$SCAFFOLD/templates/common/gates.toml.example"  .gates.toml
 mkdir -p .tools
 cp "$SCAFFOLD/templates/common/tools/manifest.toml.template" .tools/manifest.toml
 cp "$SCAFFOLD/templates/common/tools/gitignore-template"     .tools/.gitignore
-mkdir -p .semgrep/packs  && cp -R "$SCAFFOLD/templates/common/semgrep-packs/." .semgrep/packs/
+mkdir -p .semgrep/packs
+# csharp.yaml is already C#-only — copy verbatim.
+cp "$SCAFFOLD/templates/common/semgrep-packs/csharp.yaml" .semgrep/packs/
+# owasp-top-ten.yaml vendors 544 rules across 25 languages. Filter at copy
+# time to the C#-applicable subset (csharp / C# / generic / yaml /
+# dockerfile / regex / json / bash). Drops the pack from ~1.3 MB to ~190 KB
+# and stops semgrep from loading 467 inert python/java/go/php/ruby/scala/
+# kotlin/swift/clojure/solidity/hcl/terraform/html rules on every gate run.
+# When the python / typescript scaffolds land, copy this block with a
+# different KEEP set; do NOT mutate the vendored common/ file.
+SRC="$SCAFFOLD/templates/common/semgrep-packs/owasp-top-ten.yaml" \
+DST=".semgrep/packs/owasp-top-ten.yaml" \
+python3 - <<'PY'
+import os, yaml
+KEEP = {'csharp', 'C#', 'generic', 'yaml', 'dockerfile', 'regex', 'json', 'bash'}
+with open(os.environ['SRC']) as f:
+    pack = yaml.safe_load(f)
+pack['rules'] = [r for r in pack['rules'] if set(r.get('languages', []) or []) & KEEP]
+with open(os.environ['DST'], 'w') as f:
+    yaml.safe_dump(pack, f, sort_keys=False, default_flow_style=False, width=4096)
+print(f"Filtered OWASP pack -> {len(pack['rules'])} C#-applicable rules")
+PY
 cp    "$SCAFFOLD/templates/common/docs/BYPASS-POLICY.md"      BYPASS-POLICY.md
 cp    "$SCAFFOLD/templates/common/docs/BRANCH-PROTECTION.md"  BRANCH-PROTECTION.md
 mkdir -p docs
