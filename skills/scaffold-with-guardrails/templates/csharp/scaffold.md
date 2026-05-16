@@ -142,6 +142,7 @@ After `dotnet new`, the skill creates these files (generators don't produce them
 - `tests/<App>.Tests.Unit/Architecture/<Layer>ArchitectureTests.cs` — one per layer
 - `CLAUDE.md` (root) — from `CLAUDE-MD-TEMPLATE.md`, embeds Six Principles + Violation Guide inline (scaffolded repos are self-contained — do not rely on the global CLAUDE.md being present)
 - `src/<App>.<Layer>/AGENTS.md` — from `AGENTS-MD-TEMPLATE.md`, one per layer
+- `.github/PULL_REQUEST_TEMPLATE.md` — Six Principles + gates checklist; copied from `templates/common/.github/PULL_REQUEST_TEMPLATE.md`
 - `.claude/settings.json` — hook wiring
 - `.claude/hooks/{pre-commit,pre-push,stop-neg-audit}.sh` — copied from this skill (`chmod +x`)
 - `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference)
@@ -209,6 +210,8 @@ cp    "$SCAFFOLD/templates/common/docs/BYPASS-POLICY.md"      BYPASS-POLICY.md
 cp    "$SCAFFOLD/templates/common/docs/BRANCH-PROTECTION.md"  BRANCH-PROTECTION.md
 mkdir -p docs
 cp "$SCAFFOLD/templates/common/docs/rules-audit.md.template" docs/rules-audit.md
+mkdir -p .github
+cp "$SCAFFOLD/templates/common/.github/PULL_REQUEST_TEMPLATE.md" .github/
 mkdir -p .github/workflows
 cp "$SCAFFOLD/templates/common/github-workflows/gates-backstop.yml.disabled" .github/workflows/
 cp "$SCAFFOLD/templates/common/github-workflows/tools-pin-check.yml"          .github/workflows/
