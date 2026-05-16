@@ -149,6 +149,34 @@ After `dotnet new webapi`, also **strip the weather-forecast boilerplate** from 
 
 After `dotnet new worker`, the default `Program.cs` is a minimal `Host.CreateApplicationBuilder` shell — leave it; the user wires MediatR/MassTransit at composition time. Add the same `AssemblyMarker.cs` and `AGENTS.md` pattern under `src/<App>.Service/`.
 
+## Lockfile generation (one-time after scaffold)
+
+`Directory.Build.props` enables `RestorePackagesWithLockFile`. After the
+initial `dotnet restore`, each project has a `packages.lock.json`.
+**Commit these files.** Without them, `RestoreLockedMode=true` under CI
+will fail.
+
+```bash
+dotnet restore --use-lock-file
+git add **/packages.lock.json
+git commit -m "chore: lock NuGet transitives"
+```
+
+To bump a dependency:
+
+```bash
+dotnet add <project> package <name> --version <v>
+dotnet restore --force-evaluate
+```
+
+### CI environment variable
+
+`RestoreLockedMode` is conditioned on `$(CI) == 'true'`. GitHub Actions,
+GitLab CI, CircleCI, Travis, Azure DevOps, and most managed CI platforms
+set `CI=true` automatically. If your platform does not, set it explicitly
+in your build step (e.g. `env: CI: "true"` in the workflow) or invoke
+`dotnet restore -p:RestoreLockedMode=true` directly.
+
 ## Gate system installation (always)
 
 After `dotnet new` steps complete, the skill installs the language-agnostic
