@@ -522,9 +522,16 @@ chmod +x .githooks/pre-commit .githooks/pre-push .githooks/commit-msg
 chmod +x .githooks/pre-commit.d/* .githooks/pre-push.d/* .githooks/commit-msg.d/*
 chmod +x scripts/*.sh
 
-# Stryker.NET tool install
+# Stryker.NET tool install.
+# Pin `--source https://api.nuget.org/v3/index.json` so the install
+# bypasses any private feeds configured in the user's global NuGet.Config
+# (Azure DevOps `msft_consumption`, GitHub Packages, internal proxies,
+# etc.). `dotnet tool install` treats 401 from any configured feed as
+# fatal — even if nuget.org has the package — so a stale corp-feed token
+# would otherwise wedge the scaffold. dotnet-stryker is published only on
+# nuget.org; there is no reason to consult private feeds for it.
 dotnet new tool-manifest 2>/dev/null || true
-dotnet tool install dotnet-stryker
+dotnet tool install dotnet-stryker --source https://api.nuget.org/v3/index.json
 
 # Run bootstrap to wire hooks + fetch tools
 ./scripts/bootstrap.sh
