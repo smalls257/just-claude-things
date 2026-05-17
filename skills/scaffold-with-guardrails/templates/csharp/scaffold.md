@@ -215,7 +215,7 @@ if (app.Environment.IsDevelopment())
         opts.SwaggerEndpoint("/openapi/v1.json", "v1");
         opts.RoutePrefix = "swagger";
     });
-    app.MapMethods("/swagger", new[] { "GET", "HEAD" },
+    app.MapMethods("/swagger", ["GET", "HEAD"],
             () => Results.Redirect("/swagger/index.html"))
         .ExcludeFromDescription();
 }
