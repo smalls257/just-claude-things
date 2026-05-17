@@ -36,6 +36,12 @@ APP=ExpensePortal
 APP_LOWER=expense-portal
 SCAFFOLD="$HOME/.claude/plugins/cache/.../skills/scaffold-with-guardrails"
 
+# Initialise git if not already a repo. `bootstrap.sh` (run at the end of
+# the gate install) calls `git rev-parse` to locate the worktree root and
+# will fail with "not a git repository" on a fresh dir. `git init -q` is a
+# safe no-op on an existing repo (reinitialises the same .git dir).
+git init -q
+
 # Pin SDK first so all subsequent dotnet new commands respect it.
 # Directory.Packages.props MUST land before any `dotnet add package` runs —
 # otherwise `dotnet add` resolves the LATEST version and writes an explicit
@@ -146,18 +152,18 @@ After `dotnet new`, the skill creates these files (generators don't produce them
 - `Directory.Build.targets` (root) — semgrep gate before every build
 - `Directory.Packages.props` (root) — central package management with pinned MediatR/MassTransit MIT versions; copied from `templates/csharp/Directory.Packages.props`
 - `.semgrep/<app-lower>/<layer>.yaml` — one per layer for architecture-direction rules (Domain/Application/Infrastructure/Persistence/Api/Service)
-- `.semgrep/<app-lower>/security.yaml` — cross-cutting security baseline (hardcoded creds, SQL injection, weak crypto, BinaryFormatter, CORS misconfig — see `SEMGREP-RULE-COOKBOOK.md`)
+- `.semgrep/<app-lower>/security.yaml` — cross-cutting security baseline (hardcoded creds, SQL injection, weak crypto, BinaryFormatter, CORS misconfig — see `$SCAFFOLD/SEMGREP-RULE-COOKBOOK.md` at skill root for rule patterns and example YAML)
 - `.semgrep/<app-lower>/quality.yaml` — code-quality baseline (empty catch, throw ex, Console.WriteLine, DateTime.Now, new HttpClient, logger interpolation, IServiceProvider injection)
 - `.semgrep/<app-lower>/async.yaml` — async correctness (async void, .Result, .Wait(), .GetAwaiter().GetResult())
 - `.semgrep/<app-lower>/dapper.yaml` — Dapper specifics (no interpolated SQL in Query/Execute, no string-concat SQL, prefer async overloads, no public IQueryable leak)
 - `tests/<App>.Tests.Unit/Architecture/<Layer>ArchitectureTests.cs` — one per layer
 - `CLAUDE.md` (root) — from `CLAUDE-MD-TEMPLATE.md`, embeds Six Principles + Violation Guide inline (scaffolded repos are self-contained — do not rely on the global CLAUDE.md being present)
-- `src/<App>.<Layer>/AGENTS.md` — from `AGENTS-MD-TEMPLATE.md`, one per layer
+- `src/<App>.<Layer>/AGENTS.md` — from `AGENTS-MD-TEMPLATE.md`, one per layer. **Layer count includes `<App>.Client` when scaffolded** — the client SDK is a public-surface boundary and gets its own AGENTS.md describing its contract-stability rules
 - `.github/PULL_REQUEST_TEMPLATE.md` — Six Principles + gates checklist; copied from `templates/common/.github/PULL_REQUEST_TEMPLATE.md`
 - `.github/workflows/openapi-diff.yml.disabled` — OpenAPI contract diff stub via oasdiff; copied from `templates/csharp/github-workflows/openapi-diff.yml.disabled` (rename to `.yml` after wiring spec gen)
 - `.claude/settings.json` — hook wiring
 - `.claude/hooks/{pre-commit,pre-push,stop-neg-audit}.sh` — copied from this skill (`chmod +x`)
-- `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference)
+- `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference). **Includes `<App>.Client` when scaffolded** so the architecture tests can assert nothing in the client SDK references Infrastructure / Persistence
 - `src/<App>.{Api,Service}/Configuration/*Options.cs` — typed config + `ValidateOnStart` triad (one file per options group)
 - `src/<App>.{Api,Service}/appsettings.Development.json` — populated with the matching section for every options class so `ValidateOnStart` does not fail on first `dotnet run` (see "Companion settings" under the Options validation pattern)
 
@@ -209,7 +215,8 @@ if (app.Environment.IsDevelopment())
         opts.SwaggerEndpoint("/openapi/v1.json", "v1");
         opts.RoutePrefix = "swagger";
     });
-    app.MapGet("/swagger", () => Results.Redirect("/swagger/index.html"))
+    app.MapMethods("/swagger", new[] { "GET", "HEAD" },
+            () => Results.Redirect("/swagger/index.html"))
         .ExcludeFromDescription();
 }
 
@@ -227,10 +234,12 @@ app.MapGet("/", () => Results.Ok(new
 app.Run();
 ```
 
-`UseSwaggerUI` serves at `/swagger/index.html`; the `MapGet("/swagger")`
-redirect lets developers hit the bare prefix in a browser without the
-405/404 dance. `ExcludeFromDescription()` keeps the redirect out of the
-OpenAPI document.
+`UseSwaggerUI` serves at `/swagger/index.html`; the `MapMethods("/swagger",
+["GET","HEAD"])` redirect lets developers hit the bare prefix in a
+browser without the 404 dance, and accepts `curl -I /swagger` (HEAD)
+without 405 — common in container readiness probes and shell smoke
+tests. `ExcludeFromDescription()` keeps the redirect out of the OpenAPI
+document.
 
 For each additional `*Options` class, repeat the `AddOptions<T>().Bind().
 ValidateDataAnnotations().ValidateOnStart()` triad and extend the `/`
@@ -455,6 +464,18 @@ cp "$SCAFFOLD/templates/common/semgrep-packs/csharp.yaml" .semgrep/packs/
 # kotlin/swift/clojure/solidity/hcl/terraform/html rules on every gate run.
 # When the python / typescript scaffolds land, copy this block with a
 # different KEEP set; do NOT mutate the vendored common/ file.
+# PyYAML prereq — `python3 -c 'import yaml'` only ships with PyYAML
+# installed (it's not in the stdlib). Guard the import so the scaffold
+# fails loudly with an actionable message instead of a generic
+# `ModuleNotFoundError: No module named 'yaml'` mid-script.
+python3 -c 'import yaml' 2>/dev/null || {
+    echo "PyYAML required for OWASP pack filtering. Installing via pip3..."
+    pip3 install --quiet --user pyyaml || {
+        echo "ERROR: pip3 install pyyaml failed. Install manually and retry."
+        exit 1
+    }
+}
+
 SRC="$SCAFFOLD/templates/common/semgrep-packs/owasp-top-ten.yaml" \
 DST=".semgrep/packs/owasp-top-ten.yaml" \
 python3 - <<'PY'
