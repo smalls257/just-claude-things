@@ -34,7 +34,10 @@ layer rules accordingly — but do not switch silently.
 ```bash
 APP=ExpensePortal
 APP_LOWER=expense-portal
-SCAFFOLD="$HOME/.claude/plugins/cache/.../skills/scaffold-with-guardrails"
+# Skill substitutes the real plugin-cache path at invocation time. When
+# reading this playbook by hand, replace <path-to-skill> with the
+# absolute path to your local checkout of skills/scaffold-with-guardrails.
+SCAFFOLD="<path-to-skill>"
 
 # Initialise git if not already a repo. `bootstrap.sh` (run at the end of
 # the gate install) calls `git rev-parse` to locate the worktree root and
@@ -414,6 +417,16 @@ headless runs, set the env var explicitly:
 ASPNETCORE_ENVIRONMENT=Development \
   dotnet run --project src/<App>.Api/<App>.Api.csproj --no-launch-profile
 ```
+
+**macOS `/tmp` symlink gotcha.** On macOS `/tmp` is a symlink to
+`/private/tmp`. If the repo lives under `/tmp/...` and was built once
+via one form (`dotnet build /tmp/...`), then `dotnet run` invoked via
+the other form (`dotnet run /private/tmp/...` or vice versa) can hit
+`CS0006: Metadata file '…ref/Foo.dll' could not be found` because MSBuild
+caches absolute paths in the `.csproj.lscache` and the two spellings
+don't match. Either always use the same prefix, or `cd` into the canonical
+path before running. Production paths (under `$HOME` or `/opt`) are
+unaffected — this only bites local UAT runs from `/tmp`.
 
 ## Coverage threshold (gate-aware)
 
