@@ -78,6 +78,11 @@ source):
 - [ ] `gates-backstop` workflow passing
 ```
 
+**Risk + rollback** — a free-text field for production-affecting changes,
+migrations, and feature flags, with a stated rollback path. This is the
+**Sensor** discipline applied to the change itself: a rollback plan written
+before merge is a plan; a rollback plan written during incident is a guess.
+
 **Reviewer focus** — a free-text field that steers reviewers toward the
 load-bearing files and away from generated ones. This is how authors prevent
 reviewers from spending review time on scaffolding output rather than the
@@ -85,7 +90,11 @@ decision being made.
 
 An unchecked item in the Gates section is a signal, not a blocker on its own —
 but the reviewer must challenge it. An unchecked `Sensor` item on a change that
-touches error-handling paths is a **Black Box** risk and warrants a hold.
+touches error-handling paths is a **Black Box** risk and warrants a hold. The
+`unsafe-skip` label referenced in the Gates checklist is applied by a human
+reviewer, not by the PR author — the author's job is to document why the
+bypass is needed; the reviewer's job is to decide whether to grant it. This
+asymmetry is what prevents the label from becoming self-service.
 
 ---
 
@@ -143,7 +152,8 @@ prevents the gate configuration from drifting into **Fossil Comments** — rules
 that fire loudly on patterns the team no longer considers dangerous, or that
 duplicate a custom rule added six months later.
 
-The audit should be reviewed quarterly. Its primary outputs are a set of
+The audit template itself states the cadence — "Run quarterly to catch drift"
+(line 4 of `rules-audit.md.template`). Its primary outputs are a set of
 explicit promotion/demotion/disable decisions (not silent configuration edits)
 and an effort log entry recording who reviewed, when, and what changed. The
 quarterly cadence is the minimum; any significant rule change — adding a new
