@@ -126,11 +126,15 @@ through third-party packages). All three must agree. A violation that slips past
 prose can be caught by semgrep in CI. A violation that semgrep cannot express
 can be caught by NetArchTest. There is no gap between the three layers.
 
-```markdown
-### DOMAIN-R001 — Domain references no Infrastructure types
+> *Note: the skill currently emits rule IDs in two forms — `<APP_KEY>-<MODULE_KEY>-R001` per `SKILL.md` and `scaffold.md`, vs `<MODULE_KEY>-R001` per `AGENTS-MD-TEMPLATE.md`. The `AGENTS-MD-TEMPLATE.md` form is canonical for IDed rules; the APP_KEY-prefixed form should be reconciled in a future pass.*
 
-Domain projects must not reference Infrastructure or Persistence
-projects, packages, or types. Violations indicate Infected Core.
+```markdown
+### DOMAIN-R001 — Domain references no outward types
+
+Domain projects must not reference Application, Infrastructure, Persistence,
+Api, Service, or runtime infrastructure packages (Dapper, EF Core, MediatR,
+MassTransit, ASP.NET Core, Microsoft.Extensions.Hosting, etc.). Domain is a
+leaf with no outward references. Violations indicate Infected Core.
 
 - semgrep: `.semgrep/expense-portal/domain.yaml:DOMAIN-R001`
 - arch test: `tests/ExpensePortal.Tests.Unit/Architecture/DomainArchitectureTests.cs`
