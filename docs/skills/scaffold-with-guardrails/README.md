@@ -43,7 +43,9 @@ flowchart TD
 
 The dotted lines from Scaffolding mean "produces at scaffold time, not at
 runtime" — once a repo is scaffolded the skill is done; the hooks and gates run
-on their own from that point forward. The dotted line `AG -.same IDs.-> G`
+on their own from that point forward. Inside the Runtime layer, hooks (the git
+event handlers) invoke gates (the actual checks); every other doc in this set
+hinges on that distinction. The dotted line `AG -.same IDs.-> G`
 captures the key invariant: every rule in `AGENTS.md` carries a machine-readable
 ID (e.g. `MYAPP-DOMAIN-R001`) that appears verbatim as the semgrep rule ID in
 `.semgrep/` and as the NetArchTest test name in `tests/.../Architecture/`. A
@@ -87,8 +89,8 @@ assertion, coverlet threshold, Stryker mutation score.
 
 **hook**
 A git lifecycle script (`pre-commit`, `pre-push`, `commit-msg`) that invokes
-one or more gates. Hooks are installed into `.claude/hooks/` at scaffold time
-and run automatically on every relevant git action.
+one or more gates. Hooks live under `.githooks/` in the scaffolded repo
+and are wired in by `bootstrap.sh` setting `core.hooksPath=.githooks`.
 
 **dispatcher**
 The top-level hook script that reads the active profile and calls individual
@@ -133,11 +135,13 @@ dependencies, and machine-readable architectural rules (IDs of the form
 `<APP>-<MODULE>-RXXX`). Claude reads these to understand module scope; the same
 IDs link to semgrep rules and NetArchTest tests in the runtime layer.
 
-**CLAUDE.md**
+**CLAUDE.md (repo-root)**
 The root governance file placed at the repo root by the scaffolding layer. It
 embeds the Six Principles, the Violation Guide, and any project-specific
 conventions. Claude reads this on every session start and uses it as the
-authoritative source for what "correct" looks like in this repo.
+authoritative source for what "correct" looks like in this repo. (Not to be
+confused with the user's global `~/.claude/CLAUDE.md`, which is the canonical
+source for the Six Principles; see the **Six Principles** entry.)
 
 **scaffold orchestrator**
 The `scaffold-with-guardrails` skill itself (`SKILL.md` + `templates/`). Given
