@@ -54,7 +54,7 @@ of the repo.
 
 ---
 
-## The scaffold.md orchestrator
+## The scaffold.md orchestrator (scaffold orchestrator)
 
 The per-language playbook lives at
 `../../../skills/scaffold-with-guardrails/templates/csharp/scaffold.md`. Future

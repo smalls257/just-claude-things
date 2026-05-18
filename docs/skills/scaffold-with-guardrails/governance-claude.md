@@ -149,7 +149,7 @@ reviewable rather than silently absent.
 
 ---
 
-## Runtime nudge: NEG-AUDIT
+## Runtime nudge: NEG-AUDIT (negative audit)
 
 **Source:** `../../../skills/scaffold-with-guardrails/NEG-AUDIT.md`
 
