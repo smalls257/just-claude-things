@@ -20,9 +20,9 @@ The discipline here is not "no bypass" — it is "no *silent* bypass." Every
 bypass leaves a trail: `Verified: no` or `Verified: partial` in `git log`, an
 explicit note in the PR description, and an entry in `docs/rules-audit.md`.
 Visibility without accountability is **Silent Fallback** in governance clothing;
-the audit trail is what converts visibility into accountability. A bypass that
-cannot be found in `git log --grep='Verified: no'` is an unauthorized bypass,
-full stop.
+the audit trail is what converts visibility into accountability. A pre-commit bypass that cannot be found in `git log --grep='Verified: no'`
+is an unauthorized bypass. A branch-protection emergency-merge leaves a
+GitHub timeline event instead — see the section below.
 
 ---
 
@@ -39,7 +39,7 @@ of them.
 | `GATES_SKIP=<csv>` | Dispatcher env: skips only named gates | Specific gate hanging, tool outage (trivy DB, semgrep registry) | Commit gets `Verified: partial` trailer naming skipped gates |
 | `GATES_DRY_RUN=1` | Dispatcher env: runs gates, reports verdicts without blocking | Debugging a gate, surveying impact before enabling in CI | Not a real bypass — verdicts reported, not enforced |
 | `SKIP_SEMGREP=1` | MSBuild only: skips `SemgrepLint` target during `dotnet build` | Faster iteration when semgrep findings are noise and not committed | Build-time only; pre-commit semgrep still runs unless `--no-verify` |
-| `[skip ci]` in commit msg | GitHub Actions skips workflow run for that push | Doc-only changes no CI gate covers | Reviewer confirms in PR |
+| `[skip ci]` in commit msg | GitHub Actions skips workflow run for that push | Doc-only changes no CI gate covers | No machine trace — reviewer responsibility only |
 | Branch protection override | Admin merges against required checks | Production incident requiring immediate rollback | GitHub timeline event records actor; post-incident write-up follows |
 
 **Accuracy notes:**
@@ -76,16 +76,9 @@ And the **illegitimate** bypasses:
 - Routine convenience. If a gate is always wrong for your context, change the
   rule — don't bypass it.
 
-To find bypassed commits in a repo:
-
-```bash
-git log --grep='Verified: no' --since='30 days ago'
-git log --grep='Verified: partial' --since='30 days ago'
-```
-
-Run these queries during PR review and during the quarterly audit. A spike in
-`Verified: partial` for a specific gate is a signal that the gate is either
-broken or miscalibrated — it is not a signal to normalize the bypass.
+For the reviewer-side obligations these conditions impose — including who sets
+the `unsafe-skip` label and how stale approvals are handled — see
+[governance-humans.md](governance-humans.md)'s PR template section.
 
 ---
 
@@ -129,9 +122,7 @@ Was the gate wrong?
     └── No → fix the code, do not bypass
 ```
 
-The key distinction is whether the gate is wrong or whether you are shipping
-code that does exactly what the gate exists to prevent. Treating the second as
-the first is how rule erosion starts: each individual bypass looks defensible
+Treating the second branch as the first is how rule erosion starts: each individual bypass looks defensible
 in isolation, and collectively they hollow out the rule until only the
 enforcement machinery remains, firing on a policy nobody believes in. A bypass
 without a follow-up ticket is **Silent Fallback** — it restores velocity now
@@ -152,11 +143,20 @@ review cadence, see `governance-humans.md`'s Rules audit section.
 
 On PR review, reviewers spot-check the gate trailers on every commit in the
 branch. A `Verified: no` or `Verified: partial` commit without an accompanying
-entry in the PR description is a hold, not a nit. The `unsafe-skip` label is
-set by the reviewer, not the author — the author's job is to document why the
-bypass is needed; the reviewer's job is to decide whether the reason is
-legitimate. This asymmetry exists to prevent the label from becoming
-self-service, which would make it indistinguishable from no label at all.
+entry in the PR description is a hold, not a nit. The `unsafe-skip` label
+asymmetry (reviewer sets it, not author) is covered in
+[governance-humans.md](governance-humans.md)'s PR template section.
+
+To find bypassed commits in a repo:
+
+```bash
+git log --grep='Verified: no' --since='30 days ago'
+git log --grep='Verified: partial' --since='30 days ago'
+```
+
+Run these during PR review and during the quarterly audit. A spike in
+`Verified: partial` for a specific gate signals the gate is broken or
+miscalibrated — not a signal to normalise the bypass.
 
 The quarterly retro question is: which gates account for the most bypasses
 over the period? A gate that is bypassed repeatedly is either catching real
