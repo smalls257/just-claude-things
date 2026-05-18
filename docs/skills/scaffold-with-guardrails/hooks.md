@@ -133,16 +133,16 @@ sources `_dispatcher`, which fans out to the gate scripts in its `.d/` directory
 sequenceDiagram
     participant Dev as Developer
     participant Git as git
-    participant CM as commit-msg
     participant PC as pre-commit
+    participant CM as commit-msg
     participant PP as pre-push
     Dev->>Git: git commit
-    Git->>CM: invoke commit-msg hook
-    CM->>CM: _dispatcher → commit-msg.d/*
-    CM-->>Git: pass / fail
     Git->>PC: invoke pre-commit hook
     PC->>PC: _dispatcher → pre-commit.d/* (semgrep, format, arch-test-fast)
     PC-->>Git: pass / fail
+    Git->>CM: invoke commit-msg hook
+    CM->>CM: _dispatcher → commit-msg.d/*
+    CM-->>Git: pass / fail
     Git-->>Dev: commit created (or rejected)
     Dev->>Git: git push
     Git->>PP: invoke pre-push hook
@@ -150,13 +150,6 @@ sequenceDiagram
     PP-->>Git: pass / fail
     Git-->>Dev: push complete (or rejected)
 ```
-
-Note on hook order: git invokes `commit-msg` before `pre-commit` in some
-accounts, but in practice git fires `commit-msg` after the commit message is
-written and `pre-commit` before the commit is created. The diagram above matches
-git's actual invocation order for `git commit`: pre-commit runs first (staged
-content check), then commit-msg (message validation). The diagram preserves the
-brief's ordering for readability.
 
 ---
 
