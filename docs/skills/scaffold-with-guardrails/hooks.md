@@ -33,6 +33,18 @@ Three shared scripts in
   in non-dry-run mode. Concurrent invocations from the same repo block on the
   lock; stale locks (default 600 s) are taken over with a warning.
 
+  The lock path resolves via `git rev-parse --git-common-dir`, which means
+  sibling worktrees of the same repo share the same lock file and serialize on
+  it. A `[BLOCK]` exit can therefore come from lock contention — another worktree
+  running gates — as well as from a gate failure.
+
+  Two operator escape hatches are honoured before any gate runs:
+
+  | Variable | Effect |
+  |----------|--------|
+  | `GATES_SKIP=name1,name2` | Skip named gates (comma-separated, no `NN-` prefix). Skips are audited: `_dispatcher` records them in `gates-last-run` and `gate_tool_error` hints at this variable on tool failures. |
+  | `GATES_DRY_RUN=1` | Run gates but treat all failures as non-blocking; useful for auditing what would fail without stopping a commit. |
+
 - **`_output.sh`** — uniform ANSI / log helpers. Provides `gate_fail`,
   `gate_fail_block`, `gate_warn`, `gate_warn_block`, `gate_missing_tool`, and
   `gate_tool_error`. Every gate sources this file so output format is consistent
@@ -138,7 +150,7 @@ sequenceDiagram
     participant PP as pre-push
     Dev->>Git: git commit
     Git->>PC: invoke pre-commit hook
-    PC->>PC: _dispatcher → pre-commit.d/* (semgrep, format, arch-test-fast)
+    PC->>PC: _dispatcher → pre-commit.d/* (format, secrets, static-analysis, tests-unit, ...)
     PC-->>Git: pass / fail
     Git->>CM: invoke commit-msg hook
     CM->>CM: _dispatcher → commit-msg.d/*
@@ -146,7 +158,7 @@ sequenceDiagram
     Git-->>Dev: commit created (or rejected)
     Dev->>Git: git push
     Git->>PP: invoke pre-push hook
-    PP->>PP: _dispatcher → pre-push.d/* (tests-unit, coverage, lockfile-check)
+    PP->>PP: _dispatcher → pre-push.d/* (tests-integration, deps-deep)
     PP-->>Git: pass / fail
     Git-->>Dev: push complete (or rejected)
 ```
@@ -167,6 +179,8 @@ Three profiles are defined by the system:
 | `prototype` | Rapid early development | `standard` gates warn instead of blocking; `optional` gates are off |
 | `standard` | Normal development (default) | `standard` gates block on error; `optional` gates warn |
 | `regulated` | Compliance / production hardening | All gates block on error |
+
+`critical` and `always` tiers block on error in every profile (they are not subject to profile downgrades).
 
 The active profile is set with a single key in `.gates.toml`:
 
