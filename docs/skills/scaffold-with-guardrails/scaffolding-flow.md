@@ -47,9 +47,10 @@ safe no-op on an existing repo). The only branch is the back-edge labelled
 boilerplate the developer has not yet replaced, the developer either fixes the
 finding or invokes a documented bypass and loops back to build. The "First
 commit" node is the first place where the `Verified:` trailer appears in
-`git log`, courtesy of the commit-msg hook installed by `bootstrap.sh`. From
-that point forward, every commit's gate verdict is part of the permanent
-history of the repo.
+`git log`, courtesy of the commit-msg hook installed by `bootstrap.sh` (see
+[hooks.md](hooks.md) for the dispatcher and trailer mechanics). From that
+point forward, every commit's gate verdict is part of the permanent history
+of the repo.
 
 ---
 
@@ -76,11 +77,10 @@ re-run, producing artefacts like `.githooks/githooks/...` that the skill never
 notices. `git init -q` is run unconditionally; on a fresh directory it
 initialises the worktree, on an existing repo it reinitialises the same `.git`
 directory with no effect on history. The result is that re-running the skill
-on a scaffolded repo refreshes templates without producing duplicates — a
-property the **Sensor** Principle quietly relies on, because the failure mode
-of a non-idempotent scaffold (silently doubled `cp -R` trees) is exactly the
-kind of **Black Box** that surfaces only when a downstream gate trips on the
-duplicate.
+on a scaffolded repo refreshes templates without producing duplicates. The
+failure mode of a non-idempotent scaffold (silently doubled `cp -R` trees)
+is exactly the kind of **Black Box** that surfaces only when a downstream
+gate trips on the duplicate.
 
 ---
 
@@ -113,8 +113,9 @@ resume from the deferred items in frontmatter or start fresh with a new slug;
 when it exists with `status: complete`, the skill prompts to overwrite (with
 explicit confirmation) or pick a new slug. The resume path matters because
 the grill loop can be long and the alternative — silently starting over —
-would discard every decision the user already made, a **Forensic Coding**
-trap if the user thought they were continuing.
+would discard every decision the user already made while returning a
+fake-fresh session, a **Silent Fallback** dressed as convenience. The
+prompt converts that swallowed state into an explicit choice.
 
 ---
 
@@ -155,27 +156,27 @@ fix is to populate a placeholder `appsettings.Development.json` at scaffold
 time with one section per options class. The scaffold does this explicitly
 in the hand-written files list: see
 `../../../skills/scaffold-with-guardrails/templates/csharp/scaffold.md`
-under the "Companion settings" treatment and the bullet at line 171 of that
-file. Without the companion JSON the **Infected Core** failure mode appears
-inverted: the *host* refuses to start because configuration is missing,
-which is the right behaviour, but the developer experience on first run is
-indistinguishable from a broken scaffold. The companion JSON is the smallest
-change that lets the developer see a green first run and *then* fail-fast on
-real misconfiguration later.
+under the "Companion settings" treatment. Without the companion JSON the
+scaffold would be a **Paper Tiger** — it meets the literal spec (a buildable
+repo) but fails the actual need (the developer's first `dotnet run` shows a
+working `/health` endpoint, not an `OptionsValidationException` stack trace
+that looks identical to a broken scaffold). The companion JSON is the
+smallest change that lets the developer see a green first run and *then*
+fail-fast on real misconfiguration later.
 
 ---
 
 ## OWASP semgrep filter
 
 The skill vendors the full `owasp-top-ten.yaml` pack into
-`templates/common/semgrep-packs/`. Vendoring is non-negotiable for the
-**Buffer** Principle: with the pack on disk, every gate run reads from the
-local filesystem, no semgrep registry round-trip is required, and the rule
-set is deterministic across networks, airplane modes, and outages of the
-upstream registry. A scaffold that depended on a live registry pull would
-fail the Airplane Test by definition — the core (the gate verdict) would
-depend on a specific piece of infrastructure (the semgrep registry) that has
-no business being in the hot path.
+`templates/common/semgrep-packs/`. With the pack on disk, every gate run
+reads from the local filesystem; no semgrep registry round-trip is required;
+and the rule set is deterministic across networks, airplane modes, and
+outages of the upstream registry. A scaffold that depended on a live
+registry pull would fail the **Buffer** Principle's Airplane Test by
+definition — the core (the gate verdict) would depend on a specific piece
+of infrastructure (the semgrep registry) that has no business being in the
+hot path.
 
 The pack ships with rules for 25 languages — 544 rules in total, weighing in
 at roughly 1.3 MB on disk. Of those, only a small subset is relevant to a
@@ -233,6 +234,8 @@ overridden. The properties it sets:
   graph. The alternative — `RestoreLockedMode=true` everywhere — would
   block the developer's `dotnet add package` workflow with NU1004 every
   time they tried to update a version, training them to silence the gate.
+  For the gate-side view of what NU1004 looks like in CI, see
+  [gates.md](gates.md) under the lockfile-mode gate.
 - **`WarningsNotAsErrors=$(WarningsNotAsErrors);NU1507`** — NU1507 fires
   when a restore sees multiple NuGet sources without source-mapping
   configured. That is an environment quirk of corporate networks with a
@@ -302,9 +305,8 @@ has a central pin to fall back to).
 After `dotnet new` finishes, the skill hand-writes every file the
 generators do not produce. The canonical, ground-truth list lives at
 `../../../skills/scaffold-with-guardrails/templates/csharp/scaffold.md`
-under the "Files the skill hand-writes after dotnet new" section (starts at
-line 146 of that file; the bullet list runs through line 171). Refer to
-that section as the authoritative inventory; this document categorises
+under the "Files the skill hand-writes after dotnet new" section. Refer
+to that section as the authoritative inventory; this document categorises
 those files by the role they play in the running system.
 
 **Identity files** — the doctrine layer.
