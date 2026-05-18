@@ -15,16 +15,22 @@ is sought. See `hooks.md` for hook lifecycle details.
 
 | Gate | Tool | Runs at | Catches | Bypass key |
 |---|---|---|---|---|
-| Architecture rules | semgrep + NetArchTest | pre-commit + build | Cross-layer references that violate dependency direction | `SKIP_SEMGREP=1` (semgrep only) |
-| Security baseline | semgrep | pre-commit + build | Hardcoded creds, SQL injection, weak crypto, BinaryFormatter, CORS misconfig | `SKIP_SEMGREP=1` |
-| Code quality | semgrep | pre-commit + build | Empty catch, throw ex, Console.WriteLine, DateTime.Now, new HttpClient, logger interpolation, IServiceProvider injection | `SKIP_SEMGREP=1` |
-| Async correctness | semgrep | pre-commit + build | async void, .Result, .Wait, .GetAwaiter().GetResult | `SKIP_SEMGREP=1` |
-| Dapper specifics | semgrep | pre-commit + build | Interpolated/concat SQL, public IQueryable leak | `SKIP_SEMGREP=1` |
-| OWASP Top 10 | semgrep (vendored pack) | pre-commit + build | OWASP top-ten patterns, filtered to C#-applicable rules | `SKIP_SEMGREP=1` |
+| Architecture rules | semgrep + NetArchTest | pre-commit + build | Cross-layer references that violate dependency direction | `--no-verify` (commit/push) |
+| Security baseline | semgrep | pre-commit + build | Hardcoded creds, SQL injection, weak crypto, BinaryFormatter, CORS misconfig | `--no-verify` (commit/push) |
+| Code quality | semgrep | pre-commit + build | Empty catch, throw ex, Console.WriteLine, DateTime.Now, new HttpClient, logger interpolation, IServiceProvider injection | `--no-verify` (commit/push) |
+| Async correctness | semgrep | pre-commit + build | async void, .Result, .Wait, .GetAwaiter().GetResult | `--no-verify` (commit/push) |
+| Dapper specifics | semgrep | pre-commit + build | Interpolated/concat SQL, public IQueryable leak | `--no-verify` (commit/push) |
+| OWASP Top 10 | semgrep (vendored pack) | pre-commit + build | OWASP top-ten patterns, filtered to C#-applicable rules | `--no-verify` (commit/push) |
 | Coverage threshold | coverlet + runsettings | pre-push + CI | Line/branch/method coverage below 70% | `--no-verify` (audited) |
 | Lockfile mode | dotnet restore | CI only | Drifted lockfile vs `packages.lock.json` | n/a (CI is final word) |
 | Mutation testing | Stryker.NET | nightly CI | Tests that pass without asserting | n/a (nightly, advisory) |
 | OpenAPI contract | oasdiff (stub) | pre-push (when wired) | Breaking changes to public API surface | `--no-verify` (audited) |
+
+> `SKIP_SEMGREP=1` skips only the **build-time** semgrep target in
+> `Directory.Build.targets`; it does NOT bypass the pre-commit hook
+> (`pre-commit.d/30-static-analysis`). To bypass the pre-commit semgrep gate,
+> use `git commit --no-verify`. Both bypasses must be logged in
+> `docs/rules-audit.md`.
 
 ## semgrep
 
@@ -66,8 +72,10 @@ semgrep scan \
 `SEMGREP_SEND_METRICS=off` is exported before the call. The gate self-skips
 (exits 77) when no staged source files match `\.(cs|py|ts|tsx|js|jsx|go|java)$`.
 
-The MSBuild target `SemgrepLint` in `Directory.Build.targets` runs semgrep
-at build time on the full `src/` tree when `SKIP_SEMGREP != '1'`:
+The skill hand-writes `Directory.Build.targets` at the scaffolded repo root
+(canonical block: `skills/scaffold-with-guardrails/templates/csharp/scaffold.md`
+around line 544). The `SemgrepLint` target wires semgrep into every
+`dotnet build` on the full `src/` tree when `SKIP_SEMGREP != '1'`:
 
 ```xml
 <Target Name="SemgrepLint" BeforeTargets="Build" Condition="'$(SKIP_SEMGREP)' != '1'">
@@ -127,6 +135,10 @@ pre-commit gate `50-tests-unit` calls:
 dotnet test --filter "FullyQualifiedName~Tests.Unit" \
             --nologo --no-restore --verbosity minimal
 ```
+
+The `--no-restore` flag assumes restore has already happened (as it has by the
+time the hook fires). For ad-hoc verification, drop `--no-restore`:
+`dotnet test --filter "FullyQualifiedName~Tests.Unit" --nologo --verbosity minimal`.
 
 This covers both functional unit tests and all architecture tests. Integration
 tests run separately via the pre-push gate `10-tests-integration`.
@@ -342,16 +354,12 @@ for a faster pass during investigation (full runs take 30–90 min).
 ### Where rules live
 
 The workflow ships as a disabled stub at
-`.github/workflows/openapi-diff.yml.disabled`. Rename to `.yml` once the API
-host exposes an OpenAPI document (via `Microsoft.Extensions.ApiDescription.Server`
-and `dotnet getdocument`). A committed baseline spec must exist at
-`docs/openapi/openapi.json`.
-
-### Current status
-
-**Wired in but not yet enforced.** Until the stub is activated, breaking API
-changes are not caught here; semgrep, NetArchTest, and coverlet still run on
-every commit and push.
+`.github/workflows/openapi-diff.yml.disabled`. **Wired in but not yet
+enforced** — until the stub is renamed to `.yml`, breaking API changes are not
+caught here; semgrep, NetArchTest, and coverlet still run on every commit and
+push. Rename to `.yml` once the API host exposes an OpenAPI document (via
+`Microsoft.Extensions.ApiDescription.Server` and `dotnet getdocument`). A
+committed baseline spec must exist at `docs/openapi/openapi.json`.
 
 ### Exact invocation (when activated)
 
@@ -372,6 +380,9 @@ current spec via `dotnet getdocument`, fetch the base-branch spec from
 ```
 
 ### Example failure (when wired)
+
+*Illustrative format. Real `oasdiff` output is tabular (markdown table of
+breaking changes); see `tufin/oasdiff` README for canonical examples.*
 
 ```
 [oasdiff] Checking for breaking changes...
