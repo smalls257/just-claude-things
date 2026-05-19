@@ -27,7 +27,7 @@ scaffold is in a known-good state.
 1. Pre-check — parse all <module> blocks, validate cross-references
 2. (If gaps) Gap report → user prompts: fix and re-run, or proceed with stubs
 3. Per module, per artifact type, emit files
-4. Emit single migrations/0001_initial_schema.sql
+4. Emit single 0001_initial_schema.sql (path per output-folder rule)
 5. Run dotnet build
 6. Summary report
 ```
