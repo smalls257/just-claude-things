@@ -1,6 +1,6 @@
 ---
 name: scaffold-with-guardrails
-description: Use when starting a new project after tech design is complete. Generates the repo scaffold (per the design), root CLAUDE.md, per-module AGENTS.md with IDed architectural rules, matching semgrep rules, NetArchTest arch tests, Claude-only git hooks, and optionally populates Domain/Persistence/API skeletons from XML-tagged tech-design sections (Phase-2). Triggers include "scaffold the repo", "set up the project", "wire in arch tests", "bootstrap new app".
+description: Use when starting a new project after tech design is complete. Generates the repo scaffold (optionally populated from tech-design XML tags — Phase-2), root CLAUDE.md, per-module AGENTS.md with IDed architectural rules, matching semgrep rules, NetArchTest arch tests, and Claude-only git hooks. Triggers include "scaffold the repo", "set up the project", "wire in arch tests", "bootstrap new app".
 ---
 
 # scaffold-with-guardrails
@@ -26,11 +26,14 @@ docs + machine-enforced architectural rules + Claude-only hooks.
 - One NetArchTest test per arch rule in `tests/<App>.Tests.Unit/Architecture/`
 - `Directory.Build.targets` — semgrep gate BeforeTargets="Build"
 - `.claude/settings.json` + `.claude/hooks/{pre-commit,pre-push,stop-neg-audit}.sh`
-- **(Phase-2, opt-in)** Domain entity classes, Dapper row types, C# enums,
-  API DTO records, minimal route stubs, xUnit skip-stub tests, and a
-  single `migrations/0001_initial_schema.sql` bootstrap — generated from
-  `<module>` / `<entities>` / `<enums>` / `<contracts>` / `<endpoints>`
-  tags in the tech-design doc. See `TECH-DESIGN-TAGS.md`.
+
+### Phase-2 (opt-in, generated from tech-design XML tags)
+
+- Domain entity classes, C# enums, Dapper row types, API DTO records
+- Minimal route stubs and xUnit skip-stub tests
+- `migrations/0001_initial_schema.sql` bootstrap
+
+See `TECH-DESIGN-TAGS.md` for the tag schema.
 
 ## Process
 
@@ -67,10 +70,12 @@ docs + machine-enforced architectural rules + Claude-only hooks.
    - Every Component has matching dir + `AGENTS.md` + at least one arch rule?
 10. **Close.** `status: complete` in the tech design doc only after scaffold
     validates AND neg-audit passes.
-11. **Phase-2 handoff.** Follow the "Phase-1 → Phase-2 handoff" section at
-    the bottom of `templates/csharp/scaffold.md`. If the tech-design has
-    `<module>` tags AND the user opts in, follow
-    `templates/csharp/scaffold-phase-2.md` exactly.
+11. **Phase-2 handoff.** Detect `<module>` tags in the tech-design doc.
+    If present, ask the user: *"Populate Domain/Persistence/API skeletons
+    from the tagged sections? (Phase-2, opt-in)"*. On yes, follow
+    `templates/csharp/scaffold-phase-2.md` exactly. On no or no tags,
+    stop here. See the "Phase-1 → Phase-2 handoff" section of
+    `templates/csharp/scaffold.md` for detection rules.
 
 ## Hard rules
 
@@ -88,6 +93,8 @@ docs + machine-enforced architectural rules + Claude-only hooks.
 - `AGENTS-MD-TEMPLATE.md`
 - `SEMGREP-RULE-COOKBOOK.md`
 - `templates/csharp/scaffold.md`
+- `templates/csharp/scaffold-phase-2.md`
+- `TECH-DESIGN-TAGS.md`
 - `hooks/pre-commit.sh`, `hooks/pre-push.sh`, `hooks/stop-neg-audit.sh`
 - `GRILL-LOOP.md`, `PREREQ-CHECK.md`, `FRONTMATTER-FORMAT.md`, `NEG-AUDIT.md`
 
