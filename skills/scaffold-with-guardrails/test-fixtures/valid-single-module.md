@@ -25,10 +25,10 @@ Aggregate root for customer purchase requests.
 
 ```sql
 CREATE TABLE orders (
-  id           UUID PRIMARY KEY,
-  customer_id  UUID NOT NULL,
-  status       TEXT NOT NULL CHECK (status IN ('pending','approved','denied')),
-  total_cents  BIGINT NOT NULL,
+  id           UUID        PRIMARY KEY,
+  customer_id  UUID        NOT NULL,
+  status       TEXT        NOT NULL CHECK (status IN ('pending','approved','denied')),
+  total_cents  BIGINT      NOT NULL,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
