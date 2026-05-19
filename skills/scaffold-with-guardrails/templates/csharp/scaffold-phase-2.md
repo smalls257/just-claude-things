@@ -34,7 +34,81 @@ scaffold is in a known-good state.
 
 ## Pre-check
 
-See section below — to be filled in Task 4.
+Before generating any files, validate the tag graph end-to-end. Fail loud
+on every problem. **No silent fixes.**
+
+### Step P1: Parse all `<module>` blocks
+
+For each `<module name="X">` block in the tech-design doc:
+
+1. Record module name `X`.
+2. For each inner tag (`<entities>`, `<enums>`, `<contracts>`, `<endpoints>`):
+   - List each `### H3` item.
+   - For entities: extract the SQL fence content (the `CREATE TABLE ...`
+     statement). If no SQL fence inside an entity H3 → **FAIL**: print
+     `"Entity {Module}.{Entity} missing SQL CREATE TABLE block"` and abort.
+
+3. For each entity, parse the SQL CREATE TABLE to determine:
+   - Column names and types (UUID, BIGINT, TEXT, TIMESTAMPTZ, etc.)
+   - PK column
+   - Each `CHECK (col IN ('a','b','c'))` → links to an `<enums>` entry
+   - Each `*_id UUID NOT NULL` → cross-module FK (validated in P3)
+
+4. Record contracts and endpoints by name.
+
+### Step P2: Build the type table
+
+Build a single global table:
+
+| Module | Kind | Name | References |
+|---|---|---|---|
+| Orders | entity | Order | OrderStatus (enum), CustomerId (Guid, cross-module ID — OK) |
+| Orders | enum | OrderStatus | (none) |
+| Orders | contract | CreateOrderRequest | (none) |
+| Orders | endpoint | POST /orders | CreateOrderRequest, OrderResponse |
+| ... | ... | ... | ... |
+
+Print this table to the user before proceeding.
+
+### Step P3: Validate cross-references
+
+Run each rule. Collect all failures before prompting:
+
+1. **Endpoint → DTO refs.** For each `<endpoint>`, the Request and Response
+   types must exist in some `<contracts>` block (same module or `Shared`).
+   - Failure: `"Endpoint {Module}.{POST /path} references undefined DTO {Name}"`
+
+2. **Entity column enum refs.** If an entity column has `CHECK (col IN
+   ('a','b','c'))`, that enum must exist in `<enums>` of the same module.
+   - Failure: `"Entity {Module}.{Entity}.{column} CHECK constraint references undefined enum {Name}"`
+
+3. **Cross-module entity refs forbidden.** If an entity column's type
+   appears to be another module's entity (e.g., a non-Guid C# type
+   matching `{OtherModule}.{Entity}`), fail.
+   - Failure: `"Entity {Module}.{Entity}.{field} references cross-module entity {OtherModule}.{Entity}. Use Guid {field}Id instead."`
+
+4. **Module name PascalCase.** `<module name="orders">` (lowercase) fails.
+   - Failure: `"Module name '{name}' must be PascalCase"`
+
+### Step P4: Gap report + user prompt
+
+If any failures collected:
+
+```
+Phase-2 pre-check found N issues:
+
+  1. Endpoint Orders.POST /orders references undefined DTO LineItem
+  2. Entity Orders.Order.customer references cross-module entity Customers.Customer. Use Guid customerId instead.
+  ...
+
+Fix the tech-design and re-run, or proceed and stub the missing pieces
+with `object` placeholders? [fix/proceed]
+```
+
+- If user picks `fix` → abort Phase-2 cleanly, print `"Tech-design at {path} needs updates. Re-run scaffold when ready."`
+- If user picks `proceed` → continue to generation with `object` placeholder for undefined DTO refs, `Guid` placeholder for cross-module FK leakage. **Log every substitution in the summary report.**
+
+If no failures, continue to generation silently.
 
 ## Generation: entities + row types
 
