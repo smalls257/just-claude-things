@@ -503,12 +503,16 @@ The most common causes are:
 - Test project missing a `using Xunit;` (if Phase-1 scaffolded tests
   but the Xunit reference is in `Directory.Packages.props` only —
   unlikely but possible).
-- Generated code clashes with hand-written code from a prior session
-  (file existed and was overwritten — devs should've committed first).
+- Generated code clashes with hand-written code from a prior session.
+  Inspect the **Files OVERWRITTEN** list in the summary report and
+  `git diff` each entry against the prior commit, then merge by hand.
+  Commit before re-running Phase-2 to prevent the next overwrite.
 
 ## Summary report
 
 After successful build (or after failed-build report), print a summary:
+
+Sections below labelled with `-- OR --` show alternative renderings — emit exactly one form per section based on the run's actual state.
 
 ```
 =========================================
@@ -516,26 +520,28 @@ Phase-2 Domain Populate — Summary
 =========================================
 
 Tech-design: docs/tech-design/{{SLUG}}.md
-Modules processed: Orders, Customers, Shared
+Modules processed: Orders, Customers
+
+Counts: {{N_ENTITIES}} entities, {{N_ENUMS}} enums, {{N_CONTRACTS}} contracts, {{N_ROUTES}} routes, {{N_FILES}} files written ({{N_OVERWRITTEN}} overwritten)
 
 Migration output folder: migrations/   (or db/migrations/ if it existed)
 
 Files generated (NEW):
-  src/{{APP}}.Domain/Orders/Order.cs
-  src/{{APP}}.Domain/Orders/OrderStatus.cs
-  src/{{APP}}.Persistence/Orders/OrderRow.cs
-  src/{{APP}}.Api/Orders/Contracts/CreateOrderRequest.cs
-  src/{{APP}}.Api/Orders/Contracts/OrderResponse.cs
-  src/{{APP}}.Api/Orders/OrdersEndpoints.cs
-  tests/{{APP}}.Tests.Unit/Orders/OrderTests.cs
-  tests/{{APP}}.Tests.Integration/Orders/POST_orders_Tests.cs
-  tests/{{APP}}.Tests.Integration/Orders/GET_orders_byId_Tests.cs
+  src/{{APP_NAME}}.Domain/Orders/Order.cs
+  src/{{APP_NAME}}.Domain/Orders/OrderStatus.cs
+  src/{{APP_NAME}}.Persistence/Orders/OrderRow.cs
+  src/{{APP_NAME}}.Api/Orders/Contracts/CreateOrderRequest.cs
+  src/{{APP_NAME}}.Api/Orders/Contracts/OrderResponse.cs
+  src/{{APP_NAME}}.Api/Orders/OrdersEndpoints.cs
+  tests/{{APP_NAME}}.Tests.Unit/Orders/OrderTests.cs
+  tests/{{APP_NAME}}.Tests.Integration/Orders/POST_orders_Tests.cs
+  tests/{{APP_NAME}}.Tests.Integration/Orders/GET_orders_byId_Tests.cs
   migrations/0001_initial_schema.sql
 
 Files OVERWRITTEN (had prior contents):
   (none)
   -- OR --
-  src/{{APP}}.Domain/Orders/Order.cs
+  src/{{APP_NAME}}.Domain/Orders/Order.cs
   ... (lists files that existed)
 
 Pre-check substitutions:
