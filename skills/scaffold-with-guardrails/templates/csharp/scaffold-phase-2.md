@@ -126,6 +126,8 @@ If no failures, continue to generation without a user prompt.
 
 ## Generation: entities + row types
 
+**Documentation-only entities.** If the entity's SQL fence contains only SQL comments and no `CREATE TABLE` statement, treat the entity as documentation-only: emit **no** Domain class, **no** Row type, **no** test stub, **no** migration entry. Log the skip in the summary report's `Documentation-only entities:` section.
+
 For each entity in each module's `<entities>` block, emit two files:
 the Domain entity (business object) and the Persistence row type (Dapper
 materializer target).
@@ -341,9 +343,11 @@ public static class {{MODULE}}Endpoints
 ```
 
 Route signature rules:
+- The path string in `app.Map{METHOD}("{PATH}", ...)` is the verbatim `{PATH}` from the H3 heading `### {METHOD} {PATH}`. Path params like `{id}` pass through unchanged.
 - Path params like `{id}` become method params. Guid in path → `:guid` route constraint.
 - Request body DTO appears as `(CreateOrderRequest req)` param.
 - Response shape isn't typed at the route — it appears in the impl.
+- If the Request or Response type references an undefined DTO and the user picked `proceed` in pre-check, the route param type becomes `object` (e.g., `async (object req) => ...`). Log every such substitution in the summary report.
 - Body is always `throw new NotImplementedException("TODO: implement {METHOD} {PATH}")`.
 
 **Wiring into `Program.cs`:** Phase-2 does not modify `Program.cs`. Each module's `Map{{MODULE}}Endpoints` extension must be called explicitly — append `app.Map{{MODULE}}Endpoints();` to the endpoint-registration block in `Program.cs`. The Task 8 summary report lists every emitted endpoint extension as a wiring checklist so nothing is silently unreachable.
@@ -444,6 +448,7 @@ CREATE TABLE customers (
 
 - Module banner comment before each module's tables.
 - Per-entity source comment naming the `<module>/<entity>` tag pair.
+- Skip entities whose SQL fence contains only SQL comments (no `CREATE TABLE`). The summary report logs them under `Documentation-only entities:`.
 - SQL fences copied **verbatim** — no rewriting, no normalization. The
   tech-design author controls the exact DDL.
 - Output folder: if `db/migrations/` exists in the same directory as
@@ -537,6 +542,11 @@ Files generated (NEW):
   tests/{{APP_NAME}}.Tests.Integration/Orders/POST_orders_Tests.cs
   tests/{{APP_NAME}}.Tests.Integration/Orders/GET_orders_byId_Tests.cs
   migrations/0001_initial_schema.sql
+
+Documentation-only entities (skipped — comment-only SQL fence):
+  (none)
+  -- OR --
+  Shared.Money
 
 Files OVERWRITTEN (had prior contents):
   (none)
