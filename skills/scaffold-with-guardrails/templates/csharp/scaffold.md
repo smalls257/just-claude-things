@@ -647,9 +647,17 @@ public class DomainArchitectureTests
 After Phase-1 completes successfully (solution builds, arch tests pass on
 empty scaffold), check whether Phase-2 (domain populate) should run.
 
+The handoff asks for explicit consent because Phase-2 overwrites
+generated files on every run. Auto-running whenever `<module>` tags
+appear would silently destroy in-progress edits the moment PREREQ-CHECK
+passes — a Silent Fallback. The prompt is the **Sensor** that prevents
+that failure mode.
+
 ### Step H1: Scan tech-design for `<module>` tags
 
-Run: `grep -c '<module name=' docs/tech-design/{{SLUG}}.md`
+Run: `grep -cE '<module[ >]' docs/tech-design/{{SLUG}}.md`
+
+(Matches `<module name="X">`, `<module>`, and `<module name=foo>`. This is intentionally broader than a strict well-formedness check — PREREQ-CHECK step 5 has already failed loud on malformed tags before this point. H1 only needs to ask: *are there any module-tag-shaped tokens?*)
 
 - If `0` → Phase-2 is skipped silently. Print a brief note:
   > *"Tech-design has no `<module>` tags. Phase-2 (domain populate)
@@ -673,7 +681,7 @@ Your tech-design has <module> tags. Phase-2 can read them and generate:
   - API DTOs (src/<App>.Api/<Module>/Contracts/)
   - Minimal route stubs (src/<App>.Api/<Module>/)
   - Test stubs (tests/<App>.Tests.Unit/, tests/<App>.Tests.Integration/)
-  - Single bootstrap SQL migration (migrations/0001_initial_schema.sql)
+  - Single bootstrap SQL migration (migrations/0001_initial_schema.sql, or db/migrations/ if that folder pre-exists)
 
 All generated code throws NotImplementedException — boilerplate only,
 no business logic. Re-running Phase-2 OVERWRITES generated files;
@@ -685,8 +693,10 @@ Run Phase-2 now? [Y/n]
 ### Step H3: Branch on the answer
 
 - **User answers `n` (or `no`):**
-  > *"Phase-2 skipped. Run again later by re-invoking this skill — Phase-1
-  > will detect the existing scaffold and resume from the prompt."*
+  > *"Phase-2 skipped. To run Phase-2 later, invoke the
+  > `templates/csharp/scaffold-phase-2.md` playbook directly — re-running
+  > this full skill against the existing scaffold will fail at
+  > `dotnet new sln`."*
 
   Exit Phase-1 cleanly.
 
@@ -694,10 +704,19 @@ Run Phase-2 now? [Y/n]
   Follow `templates/csharp/scaffold-phase-2.md` exactly. That playbook
   takes over from here.
 
-### Idempotency note
+### Re-running this skill
 
-Re-running this skill against an existing scaffold:
-- Phase-1 detects existing solution/projects and does not recreate them.
-- Phase-1 → Phase-2 handoff runs again, re-prompting for Phase-2.
-- If user says yes, Phase-2 overwrites all generated files.
+Phase-1 is **not idempotent today**. The `dotnet new sln` and
+`dotnet new classlib` commands above have no existence checks, and the
+CLI refuses to overwrite an existing solution. To make changes after
+the initial scaffold:
+
+- To run Phase-2 against an existing Phase-1 scaffold: invoke
+  `templates/csharp/scaffold-phase-2.md` directly. Phase-2 *is* designed
+  to re-run — it overwrites generated domain files on every run.
+- To re-run Phase-1 itself: delete the existing solution directory and
+  start over. (Future work: add `if [ ! -e "$APP.sln" ]` guards so
+  Phase-1 short-circuits to the handoff when scaffold already exists.)
+- Phase-2 OVERWRITES generated files. Commit your work before
+  re-invoking Phase-2.
 
