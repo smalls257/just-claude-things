@@ -15,7 +15,7 @@ You only enter Phase-2 if all of the following are true:
    tests pass on empty scaffold.
 2. The tech-design doc at `docs/tech-design/<slug>.md` contains at least
    one `<module name="...">` block.
-3. PREREQ-CHECK.md tag well-formedness validation passed.
+3. `../../PREREQ-CHECK.md` tag well-formedness validation passed.
 4. The user answered **Y** to the Phase-1 → Phase-2 handoff prompt.
 
 If any condition fails, Phase-2 is skipped. Phase-1 already completed; the
