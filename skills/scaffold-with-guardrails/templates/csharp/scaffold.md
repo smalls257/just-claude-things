@@ -639,3 +639,65 @@ public class DomainArchitectureTests
     }
 }
 ```
+
+---
+
+## Phase-1 → Phase-2 handoff
+
+After Phase-1 completes successfully (solution builds, arch tests pass on
+empty scaffold), check whether Phase-2 (domain populate) should run.
+
+### Step H1: Scan tech-design for `<module>` tags
+
+Run: `grep -c '<module name=' docs/tech-design/{{SLUG}}.md`
+
+- If `0` → Phase-2 is skipped silently. Print a brief note:
+  > *"Tech-design has no `<module>` tags. Phase-2 (domain populate)
+  > skipped. See `skills/scaffold-with-guardrails/TECH-DESIGN-TAGS.md`
+  > if you want to add them later."*
+- If `≥ 1` → continue.
+
+### Step H2: Prompt the user
+
+Print exactly:
+
+```
+=========================================
+Phase-2: Domain Populate
+=========================================
+
+Your tech-design has <module> tags. Phase-2 can read them and generate:
+  - Domain entity classes (src/<App>.Domain/<Module>/)
+  - Dapper row types (src/<App>.Persistence/<Module>/)
+  - C# enums (src/<App>.Domain/<Module>/)
+  - API DTOs (src/<App>.Api/<Module>/Contracts/)
+  - Minimal route stubs (src/<App>.Api/<Module>/)
+  - Test stubs (tests/<App>.Tests.Unit/, tests/<App>.Tests.Integration/)
+  - Single bootstrap SQL migration (migrations/0001_initial_schema.sql)
+
+All generated code throws NotImplementedException — boilerplate only,
+no business logic. Re-running Phase-2 OVERWRITES generated files;
+commit your work first.
+
+Run Phase-2 now? [Y/n]
+```
+
+### Step H3: Branch on the answer
+
+- **User answers `n` (or `no`):**
+  > *"Phase-2 skipped. Run again later by re-invoking this skill — Phase-1
+  > will detect the existing scaffold and resume from the prompt."*
+
+  Exit Phase-1 cleanly.
+
+- **User answers `Y` (or `yes`, or empty/default):**
+  Follow `templates/csharp/scaffold-phase-2.md` exactly. That playbook
+  takes over from here.
+
+### Idempotency note
+
+Re-running this skill against an existing scaffold:
+- Phase-1 detects existing solution/projects and does not recreate them.
+- Phase-1 → Phase-2 handoff runs again, re-prompting for Phase-2.
+- If user says yes, Phase-2 overwrites all generated files.
+
