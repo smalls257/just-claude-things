@@ -5,7 +5,7 @@ This document defines the XML tag schema embedded in tech-design docs at
 these tags during Phase-2 (domain populate) to emit C# skeletons.
 
 Tags are optional. A tech-design doc with no `<module>` tags will be
-processed by Phase-1 only — Phase-2 is silently skipped.
+processed by Phase-1 only — Phase-2 is skipped.
 
 ## Outer wrapper
 
@@ -40,7 +40,7 @@ and the migration SQL.
 
 ### Full example
 
-```markdown
+````markdown
 <module name="Orders">
 
 <entities>
@@ -59,7 +59,7 @@ CREATE TABLE orders (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX ix_orders_customer_id ON orders (customer_id);
+CREATE INDEX idx_orders_customer ON orders(customer_id);
 ```
 
 **Invariants:** total_cents > 0; status transitions pending→approved|denied only.
@@ -106,7 +106,7 @@ CREATE INDEX ix_orders_customer_id ON orders (customer_id);
 </endpoints>
 
 </module>
-```
+````
 
 ## Cross-module reference rule
 
