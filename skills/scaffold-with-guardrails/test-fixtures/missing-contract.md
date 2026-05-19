@@ -10,7 +10,9 @@ slug: missing-contract-demo
 
 ## Architecture overview
 
-Intentionally invalid fixture. CreateOrderRequest references a `LineItem` DTO that is not declared in `<contracts>` — Phase-2 pre-check P3 Rule 1 must flag this.
+Intentionally invalid fixture. Endpoint `POST /orders/items` references a
+`LineItem` DTO that is not declared in `<contracts>` — Phase-2 pre-check
+Rule 1 (endpoint → DTO refs) must flag this.
 
 <module name="Orders">
 
@@ -31,7 +33,12 @@ CREATE TABLE orders (
 
 ### CreateOrderRequest
 
-- items: LineItem[] — required, min 1
+- totalCents: long — required, > 0
+
+### OrderResponse
+
+- id: Guid
+- totalCents: long
 
 </contracts>
 
@@ -40,10 +47,16 @@ CREATE TABLE orders (
 ### POST /orders
 
 - Request: CreateOrderRequest
-- Response: 201
+- Response: 201 OrderResponse
+
+### POST /orders/items
+
+- Request: LineItem
+- Response: 201 OrderResponse
 
 </endpoints>
 
 </module>
 
-<!-- LineItem DTO intentionally omitted. Pre-check must flag the undefined ref. -->
+<!-- LineItem DTO intentionally omitted from <contracts>. Pre-check Rule 1
+     must flag: "Endpoint Orders.POST /orders/items references undefined DTO LineItem". -->
