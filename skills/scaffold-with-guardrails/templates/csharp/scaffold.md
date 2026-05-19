@@ -34,6 +34,33 @@ layer rules accordingly — but do not switch silently.
 ```bash
 APP=ExpensePortal
 APP_LOWER=expense-portal
+# Skill substitutes the real plugin-cache path at invocation time. When
+# reading this playbook by hand, replace <path-to-skill> with the
+# absolute path to your local checkout of skills/scaffold-with-guardrails.
+SCAFFOLD="<path-to-skill>"
+
+# Initialise git if not already a repo. `bootstrap.sh` (run at the end of
+# the gate install) calls `git rev-parse` to locate the worktree root and
+# will fail with "not a git repository" on a fresh dir. `git init -q` is a
+# safe no-op on an existing repo (reinitialises the same .git dir).
+git init -q
+
+# Pin SDK first so all subsequent dotnet new commands respect it.
+# Directory.Packages.props MUST land before any `dotnet add package` runs —
+# otherwise `dotnet add` resolves the LATEST version and writes an explicit
+# Version="…" attribute into each csproj, silently bypassing the pinned
+# MediatR 12.4.1 / MassTransit 8.3.4 (both have post-MIT releases now).
+cp "$SCAFFOLD/templates/csharp/global.json" .
+cp "$SCAFFOLD/templates/csharp/Directory.Build.props" .
+cp "$SCAFFOLD/templates/csharp/Directory.Packages.props" .
+
+# .gitignore must land before `dotnet new` runs — every `dotnet new` and
+# every subsequent build/test creates bin/, obj/, TestResults/ under each
+# project. Without this copy, `git status` shows ~550 untracked artifacts
+# the moment the first build finishes. Source file is named `gitignore`
+# (no leading dot) in templates/ so it ships through filesystems / git
+# operations that strip dotfiles; rename on copy.
+cp "$SCAFFOLD/templates/csharp/gitignore" .gitignore
 
 dotnet new sln -n "$APP"
 
@@ -55,6 +82,17 @@ dotnet new xunit    -n "$APP.Tests.Unit"        -o tests/"$APP".Tests.Unit
 dotnet new xunit    -n "$APP.Tests.Integration" -o tests/"$APP".Tests.Integration
 
 find . -name "*.csproj" | sort | xargs dotnet sln add
+
+# Strip Version="…" from generated csprojs. `dotnet new webapi|worker|xunit`
+# emits explicit versions for Microsoft.AspNetCore.OpenApi /
+# Microsoft.NET.Test.Sdk / xunit / xunit.runner.visualstudio / coverlet.collector,
+# which NU1008-fails immediately under ManagePackageVersionsCentrally=true.
+# Those IDs are pinned in Directory.Packages.props; removing the inline
+# versions lets central management take over. Note the macOS-portable
+# `sed -i.bak …` form — GNU sed accepts `-i` without an argument, BSD sed
+# does not. Deleting the `.bak` files after keeps the working tree clean.
+find src tests -name '*.csproj' -exec sed -i.bak 's/ Version="[^"]*"//g' {} +
+find src tests -name '*.csproj.bak' -delete
 
 # Dependency direction: Domain ← Application ← Infrastructure/Persistence
 dotnet add src/"$APP".Application/"$APP".Application.csproj \
@@ -83,8 +121,9 @@ for HOST in Api Service; do
 done
 
 # NuGet packages — pin MediatR + MassTransit to last MIT releases.
-# Use Directory.Packages.props for centralised versions; the dotnet add calls
-# here register the PackageReference (no version) in each csproj.
+# Directory.Packages.props (copied above) sets ManagePackageVersionsCentrally=true,
+# so the `dotnet add package` calls below register versionless PackageReferences
+# and pick up the pinned versions from Directory.Packages.props automatically.
 dotnet add src/"$APP".Domain/"$APP".Domain.csproj package CSharpFunctionalExtensions
 dotnet add src/"$APP".Application/"$APP".Application.csproj package CSharpFunctionalExtensions
 dotnet add src/"$APP".Application/"$APP".Application.csproj package MediatR
@@ -97,50 +136,410 @@ dotnet add src/"$APP".Service/"$APP".Service.csproj package MassTransit.RabbitMQ
 dotnet add tests/"$APP".Tests.Unit/"$APP".Tests.Unit.csproj package NetArchTest.Rules
 ```
 
-### Directory.Packages.props version pins (hand-written)
+### Directory.Packages.props version pins
 
-```xml
-<Project>
-  <PropertyGroup>
-    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageVersion Include="CSharpFunctionalExtensions" Version="3.6.0" />
-    <PackageVersion Include="Dapper" Version="2.1.66" />
-    <PackageVersion Include="Npgsql" Version="8.0.5" />
-    <!-- MediatR pinned: last MIT release before commercial pivot (Aug 2024). -->
-    <PackageVersion Include="MediatR" Version="12.4.1" />
-    <!-- MassTransit pinned: last MIT v8 release before commercial v9. -->
-    <PackageVersion Include="MassTransit" Version="8.3.4" />
-    <PackageVersion Include="MassTransit.RabbitMQ" Version="8.3.4" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.7" />
-    <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />
-  </ItemGroup>
-</Project>
-```
+Lives at `templates/csharp/Directory.Packages.props` — copied verbatim by the
+scaffold (see the `cp` at the top of the bash block above). MediatR and
+MassTransit are pinned to their last MIT releases; bumping them requires
+license review.
 
 ## Files the skill hand-writes after dotnet new
 
 After `dotnet new`, the skill creates these files (generators don't produce them):
 
 - `.gitignore` (root) — copied from `templates/csharp/gitignore`
+- `.editorconfig` (root) — shared IDE formatting baseline + C# diagnostic severities; copied from `templates/common/.editorconfig`
+- `global.json` (root) — pins SDK; copied verbatim from `templates/csharp/global.json`
+- `Directory.Build.props` (root) — TWAE on src, lockfile-mode (CI), InvariantGlobalization on hosts; copied from `templates/csharp/Directory.Build.props`
+- `coverlet.runsettings` (root) — coverage collection config + 70% threshold; copied from `templates/csharp/coverlet.runsettings`
 - `Directory.Build.targets` (root) — semgrep gate before every build
-- `Directory.Packages.props` (root) — central package management
+- `Directory.Packages.props` (root) — central package management with pinned MediatR/MassTransit MIT versions; copied from `templates/csharp/Directory.Packages.props`
 - `.semgrep/<app-lower>/<layer>.yaml` — one per layer for architecture-direction rules (Domain/Application/Infrastructure/Persistence/Api/Service)
-- `.semgrep/<app-lower>/security.yaml` — cross-cutting security baseline (hardcoded creds, SQL injection, weak crypto, BinaryFormatter, CORS misconfig — see `SEMGREP-RULE-COOKBOOK.md`)
+- `.semgrep/<app-lower>/security.yaml` — cross-cutting security baseline (hardcoded creds, SQL injection, weak crypto, BinaryFormatter, CORS misconfig — see `$SCAFFOLD/SEMGREP-RULE-COOKBOOK.md` at skill root for rule patterns and example YAML)
 - `.semgrep/<app-lower>/quality.yaml` — code-quality baseline (empty catch, throw ex, Console.WriteLine, DateTime.Now, new HttpClient, logger interpolation, IServiceProvider injection)
 - `.semgrep/<app-lower>/async.yaml` — async correctness (async void, .Result, .Wait(), .GetAwaiter().GetResult())
 - `.semgrep/<app-lower>/dapper.yaml` — Dapper specifics (no interpolated SQL in Query/Execute, no string-concat SQL, prefer async overloads, no public IQueryable leak)
 - `tests/<App>.Tests.Unit/Architecture/<Layer>ArchitectureTests.cs` — one per layer
 - `CLAUDE.md` (root) — from `CLAUDE-MD-TEMPLATE.md`, embeds Six Principles + Violation Guide inline (scaffolded repos are self-contained — do not rely on the global CLAUDE.md being present)
-- `src/<App>.<Layer>/AGENTS.md` — from `AGENTS-MD-TEMPLATE.md`, one per layer
+- `src/<App>.<Layer>/AGENTS.md` — from `AGENTS-MD-TEMPLATE.md`, one per layer. **Layer count includes `<App>.Client` when scaffolded** — the client SDK is a public-surface boundary and gets its own AGENTS.md describing its contract-stability rules
+- `.github/PULL_REQUEST_TEMPLATE.md` — Six Principles + gates checklist; copied from `templates/common/.github/PULL_REQUEST_TEMPLATE.md`
+- `.github/workflows/openapi-diff.yml.disabled` — OpenAPI contract diff stub via oasdiff; copied from `templates/csharp/github-workflows/openapi-diff.yml.disabled` (rename to `.yml` after wiring spec gen)
 - `.claude/settings.json` — hook wiring
 - `.claude/hooks/{pre-commit,pre-push,stop-neg-audit}.sh` — copied from this skill (`chmod +x`)
-- `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference)
+- `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference). **Includes `<App>.Client` when scaffolded** so the architecture tests can assert nothing in the client SDK references Infrastructure / Persistence
+- `src/<App>.{Api,Service}/Configuration/*Options.cs` — typed config + `ValidateOnStart` triad (one file per options group)
+- `src/<App>.{Api,Service}/appsettings.Development.json` — populated with the matching section for every options class so `ValidateOnStart` does not fail on first `dotnet run` (see "Companion settings" under the Options validation pattern)
 
 After `dotnet new webapi`, also **strip the weather-forecast boilerplate** from `src/<App>.Api/Program.cs` (and delete `src/<App>.Api/*.http`). The generated example would trip `quality.yaml` (DateTime.Now, Random) and is not part of the app.
 
+Replace `Program.cs` with the canonical skeleton below. It wires the
+OpenAPI spec (`/openapi/v1.json`), the Swagger UI page (`/swagger`, with
+a bare-prefix redirect so the URL is browser-friendly), a health probe
+(`/health`), and a root landing endpoint (`/`) that returns the machine
+name plus links to the other three — enough for a smoke test (`curl /`)
+to confirm the host boots, options bind, and the kestrel routing table
+is alive. Swagger UI and `MapOpenApi` are gated to the Development
+environment so production never serves the doc surface.
+
+Add the Swagger UI package reference to `src/<App>.Api/<App>.Api.csproj`
+alongside `Microsoft.AspNetCore.OpenApi`:
+
+```xml
+<PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+<PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" />
+```
+
+(The version is pinned in `Directory.Packages.props`. The package ships
+the static UI assets only — the OpenAPI document itself is still
+produced by `Microsoft.AspNetCore.OpenApi`, so there are no duplicate
+generators.)
+
+```csharp
+using <App>.Api.Configuration;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOpenApi();
+builder.Services.AddHealthChecks();
+
+builder.Services
+    .AddOptions<DatabaseOptions>()
+    .Bind(builder.Configuration.GetSection(DatabaseOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.UseSwaggerUI(opts =>
+    {
+        opts.SwaggerEndpoint("/openapi/v1.json", "v1");
+        opts.RoutePrefix = "swagger";
+    });
+    app.MapMethods("/swagger", ["GET", "HEAD"],
+            () => Results.Redirect("/swagger/index.html"))
+        .ExcludeFromDescription();
+}
+
+app.UseHttpsRedirection();
+app.MapHealthChecks("/health");
+
+app.MapGet("/", () => Results.Ok(new
+{
+    machine = Environment.MachineName,
+    openapi = "/openapi/v1.json",
+    swagger = "/swagger",
+    health = "/health",
+}));
+
+app.Run();
+```
+
+`UseSwaggerUI` serves at `/swagger/index.html`; the `MapMethods("/swagger",
+["GET","HEAD"])` redirect lets developers hit the bare prefix in a
+browser without the 404 dance, and accepts `curl -I /swagger` (HEAD)
+without 405 — common in container readiness probes and shell smoke
+tests. `ExcludeFromDescription()` keeps the redirect out of the OpenAPI
+document.
+
+For each additional `*Options` class, repeat the `AddOptions<T>().Bind().
+ValidateDataAnnotations().ValidateOnStart()` triad and extend the `/`
+payload with any new probe routes — keep `/` as the single source of
+truth for "what routes does this service expose".
+
 After `dotnet new worker`, the default `Program.cs` is a minimal `Host.CreateApplicationBuilder` shell — leave it; the user wires MediatR/MassTransit at composition time. Add the same `AssemblyMarker.cs` and `AGENTS.md` pattern under `src/<App>.Service/`.
+
+**Also fix the generated `Worker.cs`.** `dotnet new worker` emits
+`_logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now)` which
+trips CA1848 (use compile-time logging delegates) and CA1727 (PascalCase
+placeholders) — both promoted to errors by `TreatWarningsAsErrors=true` on
+`src/`. Replace the `LogInformation` call with a `LoggerMessage` delegate so the
+first build is green:
+
+```csharp
+public sealed class Worker(ILogger<Worker> logger) : BackgroundService
+{
+    private static readonly Action<ILogger, DateTimeOffset, Exception?> LogHeartbeat =
+        LoggerMessage.Define<DateTimeOffset>(
+            LogLevel.Information,
+            new EventId(1, nameof(LogHeartbeat)),
+            "Worker running at: {Time}");
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                LogHeartbeat(logger, DateTimeOffset.Now, null);
+            }
+            await Task.Delay(1000, stoppingToken);
+        }
+    }
+}
+```
+
+Or strip the heartbeat body entirely if the worker has real work to do — the
+goal is just to keep the first build clean under TWAE.
+
+## Lockfile generation (one-time after scaffold)
+
+`Directory.Build.props` enables `RestorePackagesWithLockFile`. After the
+initial `dotnet restore`, each project has a `packages.lock.json`.
+**Commit these files.** Without them, `RestoreLockedMode=true` under CI
+will fail.
+
+```bash
+dotnet restore --use-lock-file
+git add -- '**/packages.lock.json'
+git commit -m "chore: lock NuGet transitives"
+```
+
+To bump a dependency:
+
+```bash
+dotnet add <project> package <name> --version <v>
+dotnet restore --force-evaluate
+```
+
+### CI environment variable
+
+`RestoreLockedMode` is conditioned on `$(CI) == 'true'`. GitHub Actions,
+GitLab CI, CircleCI, and Travis set `CI=true` automatically. **Azure
+DevOps does not** — it sets `TF_BUILD=True` instead. On Azure DevOps,
+either set `CI` explicitly in the pipeline:
+
+```yaml
+variables:
+  CI: 'true'
+```
+
+or invoke restore with the property directly:
+
+```bash
+dotnet restore -p:RestoreLockedMode=true
+```
+
+## Options validation pattern (hand-written by skill per host)
+
+Every typed configuration class in `<App>.Api/Configuration/` or
+`<App>.Service/Configuration/` must follow this triad:
+
+1. POCO with `DataAnnotations` constraints (`[Required]`, `[Range]`, etc.)
+2. `services.AddOptions<T>().Bind(section).ValidateDataAnnotations().ValidateOnStart()`
+3. Consumers inject `IOptions<T>` / `IOptionsSnapshot<T>` — never `IConfiguration`
+
+Why: surfaces config errors at process start, not the first request.
+Tied to the Sensor principle (failures visible at the boundary, not buried).
+
+Example:
+
+`src/<App>.Api/Configuration/DatabaseOptions.cs`:
+
+```csharp
+using System.ComponentModel.DataAnnotations;
+
+namespace <App>.Api.Configuration;
+
+public sealed class DatabaseOptions
+{
+    public const string SectionName = "Database";
+
+    [Required]
+    [MinLength(10)]
+    public string ConnectionString { get; init; } = string.Empty;
+
+    [Range(1, 300)]
+    public int CommandTimeoutSeconds { get; init; } = 30;
+}
+```
+
+`src/<App>.Api/Program.cs` (wiring):
+
+```csharp
+builder.Services
+    .AddOptions<DatabaseOptions>()
+    .Bind(builder.Configuration.GetSection(DatabaseOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+```
+
+### Companion settings — required for the host to start
+
+`ValidateOnStart()` throws at process start if the bound section is missing
+or fails DataAnnotations. That is the point of the doctrine, but it also
+means a freshly-scaffolded host will refuse to run until each options
+section has a value source. For every `<App>.{Api,Service}/Configuration/
+*Options.cs` the skill writes, also wire a corresponding entry in
+`appsettings.Development.json` so `dotnet run` works out of the box.
+
+For `DatabaseOptions` (`Database` section):
+
+```json
+{
+  "Logging": { "LogLevel": { "Default": "Information", "Microsoft.AspNetCore": "Warning" } },
+  "Database": {
+    "ConnectionString": "Host=localhost;Database=<app_lower>;Username=postgres;Password=postgres",
+    "CommandTimeoutSeconds": 30
+  }
+}
+```
+
+`appsettings.json` (loaded in every env) stays free of secrets — only
+non-sensitive defaults belong there. Production values flow in via env
+vars (`Database__ConnectionString=...`) or a secret store; the local dev
+placeholder above exists solely so the first `dotnet run` succeeds and so
+that integration tests have a deterministic target.
+
+For per-developer secrets that should not be committed, prefer
+`dotnet user-secrets` over editing `appsettings.Development.json`:
+
+```bash
+dotnet user-secrets init --project src/<App>.Api/<App>.Api.csproj
+dotnet user-secrets set "Database:ConnectionString" "Host=..." \
+  --project src/<App>.Api/<App>.Api.csproj
+```
+
+`UserSecrets` only loads in the `Development` environment by default,
+which is exactly the seam intended here.
+
+**Environment-loading gotcha.** `appsettings.Development.json` only loads
+when `ASPNETCORE_ENVIRONMENT=Development`. `dotnet run` (no flags) picks
+that up from `Properties/launchSettings.json` (the `http` profile sets
+it). But `dotnet run --no-launch-profile` — common in CI scripts and
+smoke tests — defaults to `Production` and will trip `ValidateOnStart`
+because `appsettings.json` deliberately holds no DB section. For
+headless runs, set the env var explicitly:
+
+```bash
+ASPNETCORE_ENVIRONMENT=Development \
+  dotnet run --project src/<App>.Api/<App>.Api.csproj --no-launch-profile
+```
+
+**macOS `/tmp` symlink gotcha.** On macOS `/tmp` is a symlink to
+`/private/tmp`. If the repo lives under `/tmp/...` and was built once
+via one form (`dotnet build /tmp/...`), then `dotnet run` invoked via
+the other form (`dotnet run /private/tmp/...` or vice versa) can hit
+`CS0006: Metadata file '…ref/Foo.dll' could not be found` because MSBuild
+caches absolute paths in the `.csproj.lscache` and the two spellings
+don't match. Either always use the same prefix, or `cd` into the canonical
+path before running. Production paths (under `$HOME` or `/opt`) are
+unaffected — this only bites local UAT runs from `/tmp`.
+
+## Coverage threshold (gate-aware)
+
+`coverlet.runsettings` is generated at repo root with a 70% line/branch/method
+threshold. Wire it into the test gate by editing the pre-commit `50-tests-unit`
+script (after scaffolding) to invoke:
+
+```bash
+dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings
+```
+
+Or add a CI-only check (preferred — keeps pre-commit fast):
+
+```yaml
+- name: Coverage gate
+  run: dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings
+```
+
+Tune the `<Threshold>` value as the suite matures. Mutation testing (Stryker)
+covers the "tests run but don't assert" gap that line coverage misses.
+
+## Gate system installation (always)
+
+After `dotnet new` steps complete, the skill installs the language-agnostic
+gate system from `templates/common/` and the .NET-conditional pieces from
+`templates/csharp/`:
+
+```bash
+# Language-agnostic
+# Use `cp -R <src>/. <dst>/` (trailing `/.`) for directory copies — bare
+# `cp -R <src> <dst>` on macOS nests src *inside* dst on re-run, which makes
+# the scaffold non-idempotent and silently produces .githooks/githooks/...
+cp "$SCAFFOLD/templates/common/.editorconfig" .
+mkdir -p .githooks       && cp -R "$SCAFFOLD/templates/common/githooks/."     .githooks/
+mkdir -p scripts         && cp -R "$SCAFFOLD/templates/common/scripts/."      scripts/
+cp    "$SCAFFOLD/templates/common/gitconfig-gates"     .gitconfig.gates
+cp    "$SCAFFOLD/templates/common/gates.toml.example"  .gates.toml
+mkdir -p .tools
+cp "$SCAFFOLD/templates/common/tools/manifest.toml.template" .tools/manifest.toml
+cp "$SCAFFOLD/templates/common/tools/gitignore-template"     .tools/.gitignore
+mkdir -p .semgrep/packs
+# csharp.yaml is already C#-only — copy verbatim.
+cp "$SCAFFOLD/templates/common/semgrep-packs/csharp.yaml" .semgrep/packs/
+# owasp-top-ten.yaml vendors 544 rules across 25 languages. Filter at copy
+# time to the C#-applicable subset (csharp / C# / generic / yaml /
+# dockerfile / regex / json / bash). Drops the pack from ~1.3 MB to ~190 KB
+# and stops semgrep from loading 467 inert python/java/go/php/ruby/scala/
+# kotlin/swift/clojure/solidity/hcl/terraform/html rules on every gate run.
+# When the python / typescript scaffolds land, copy this block with a
+# different KEEP set; do NOT mutate the vendored common/ file.
+# PyYAML prereq — `python3 -c 'import yaml'` only ships with PyYAML
+# installed (it's not in the stdlib). Guard the import so the scaffold
+# fails loudly with an actionable message instead of a generic
+# `ModuleNotFoundError: No module named 'yaml'` mid-script.
+python3 -c 'import yaml' 2>/dev/null || {
+    echo "PyYAML required for OWASP pack filtering. Installing via pip3..."
+    pip3 install --quiet --user pyyaml || {
+        echo "ERROR: pip3 install pyyaml failed. Install manually and retry."
+        exit 1
+    }
+}
+
+SRC="$SCAFFOLD/templates/common/semgrep-packs/owasp-top-ten.yaml" \
+DST=".semgrep/packs/owasp-top-ten.yaml" \
+python3 - <<'PY'
+import os, yaml
+KEEP = {'csharp', 'C#', 'generic', 'yaml', 'dockerfile', 'regex', 'json', 'bash'}
+with open(os.environ['SRC']) as f:
+    pack = yaml.safe_load(f)
+pack['rules'] = [r for r in pack['rules'] if set(r.get('languages', []) or []) & KEEP]
+with open(os.environ['DST'], 'w') as f:
+    yaml.safe_dump(pack, f, sort_keys=False, default_flow_style=False, width=4096)
+print(f"Filtered OWASP pack -> {len(pack['rules'])} C#-applicable rules")
+PY
+cp    "$SCAFFOLD/templates/common/docs/BYPASS-POLICY.md"      BYPASS-POLICY.md
+cp    "$SCAFFOLD/templates/common/docs/BRANCH-PROTECTION.md"  BRANCH-PROTECTION.md
+mkdir -p docs
+cp "$SCAFFOLD/templates/common/docs/rules-audit.md.template" docs/rules-audit.md
+mkdir -p .github
+cp "$SCAFFOLD/templates/common/.github/PULL_REQUEST_TEMPLATE.md" .github/
+mkdir -p .github/workflows
+cp "$SCAFFOLD/templates/common/github-workflows/gates-backstop.yml.disabled" .github/workflows/
+cp "$SCAFFOLD/templates/common/github-workflows/tools-pin-check.yml"          .github/workflows/
+
+# .NET-conditional
+cp "$SCAFFOLD/templates/csharp/github-workflows/stryker-nightly.yml" .github/workflows/
+cp "$SCAFFOLD/templates/csharp/github-workflows/openapi-diff.yml.disabled" .github/workflows/
+cp "$SCAFFOLD/templates/csharp/stryker-config.json" .
+cp "$SCAFFOLD/templates/csharp/coverlet.runsettings" .
+
+# Make executables
+chmod +x .githooks/pre-commit .githooks/pre-push .githooks/commit-msg
+chmod +x .githooks/pre-commit.d/* .githooks/pre-push.d/* .githooks/commit-msg.d/*
+chmod +x scripts/*.sh
+
+# Stryker.NET tool install.
+# Pin `--source https://api.nuget.org/v3/index.json` so the install
+# bypasses any private feeds configured in the user's global NuGet.Config
+# (Azure DevOps `msft_consumption`, GitHub Packages, internal proxies,
+# etc.). `dotnet tool install` treats 401 from any configured feed as
+# fatal — even if nuget.org has the package — so a stale corp-feed token
+# would otherwise wedge the scaffold. dotnet-stryker is published only on
+# nuget.org; there is no reason to consult private feeds for it.
+dotnet new tool-manifest 2>/dev/null || true
+dotnet tool install dotnet-stryker --source https://api.nuget.org/v3/index.json
+
+# Run bootstrap to wire hooks + fetch tools
+./scripts/bootstrap.sh
+```
+
+After the scaffold completes, the user must commit the populated
+`.tools/manifest.toml` (with real SHA256 checksums) to make the pinning
+contract binding.
 
 ## Directory.Build.targets (hand-written by skill)
 
@@ -164,11 +563,20 @@ Cross-platform (forward slashes; works on macOS, Linux, Windows):
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash(git commit:*)",
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/pre-commit.sh"
+            "command": ".githooks/pre-commit"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(git push:*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".githooks/pre-push"
           }
         ]
       }
@@ -187,7 +595,7 @@ Cross-platform (forward slashes; works on macOS, Linux, Windows):
 }
 ```
 
-Note: Verify the exact `.claude/settings.json` hook schema against current Claude Code docs at scaffold time — the schema may evolve between skill versions.
+Note the matcher tightening (`Bash(git commit:*)` instead of `Bash`) — fixes the broad-matcher issue from the audit. Claude Code's hook matcher accepts glob-like patterns; this only fires on `git commit`/`git push` invocations. Verify the exact `.claude/settings.json` hook schema against current Claude Code docs at scaffold time — the schema may evolve between skill versions.
 
 ## NetArchTest starter — one per module (hand-written by skill)
 

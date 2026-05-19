@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Tier: optional. Per-function cyclomatic complexity via lizard.
+# Tier resolved via _profile.sh (warn in standard, error in regulated, off in prototype).
+set -uo pipefail
+GATE="60-complexity"
+GATE_DIR="$(dirname "${BASH_SOURCE[0]}")"
+# shellcheck source=../_output.sh
+. "$(dirname "$GATE_DIR")/_output.sh"
+# shellcheck source=../_profile.sh
+. "$(dirname "$GATE_DIR")/_profile.sh"
+
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+
+# Applicability — staged source files. Self-skip before tool check (Infected Core).
+# grep exit 1 = zero matches = empty $files → self-skip. Not Silent Fallback.
+files=$(git diff --cached --name-only --diff-filter=ACM \
+        | grep -E '\.(cs|py|ts|tsx|js|jsx|go|java)$' || true)
+if [ -z "$files" ]; then
+  exit 77
+fi
+
+# Resolve tier policy via central resolver (replaces former in-gate grep).
+tier=$(resolve_tier "complexity" "optional")
+[ "$tier" = "off" ] && exit 77
+
+TOOL="${REPO_ROOT}/.tools/lizard"
+[ -x "$TOOL" ] || TOOL="$(command -v lizard 2>/dev/null || true)"
+if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
+  gate_missing_tool "$GATE" "lizard" "Optional: complexity gate."
+  exit 2
+fi
+
+# Threshold parsing (parameters, not policy). Section-scoped via _profile.sh.
+max_ccn=$(resolve_setting "complexity" "max_ccn" "10")
+max_nloc=$(resolve_setting "complexity" "max_nloc" "60")
+
+# Unquoted $files is intentional: word-split filenames into args.
+# Subshell cd to REPO_ROOT: hooks may run from a subdirectory, but $files
+# from `git diff --cached` is repo-relative.
+# shellcheck disable=SC2086
+out=$( cd "$REPO_ROOT" && "$TOOL" --CCN "$max_ccn" --length "$max_nloc" $files 2>&1 )
+code=$?
+if [ "$code" -ne 0 ]; then
+  case "$tier" in
+    error)
+      printf '%s\n' "$out" | gate_fail_block "$GATE" "lizard"
+      echo "  Fix: extract sub-functions, simplify." >&2
+      exit 1
+      ;;
+    warn)
+      printf '%s\n' "$out" | gate_warn_block "$GATE" "lizard"
+      echo "  Promote to error in .gates.toml when ready." >&2
+      ;;
+    # 'off' was handled above with exit 77; should never reach here.
+  esac
+fi
+exit 0

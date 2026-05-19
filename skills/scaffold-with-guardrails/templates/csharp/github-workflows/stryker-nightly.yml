@@ -1,0 +1,34 @@
+name: Stryker.NET Nightly
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+jobs:
+  mutate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '9.0.x' }
+      - name: Restore tools
+        run: dotnet tool restore
+      - name: Run Stryker.NET
+        run: dotnet stryker --config-file stryker-config.json --reporter html --reporter json
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stryker-report
+          path: StrykerOutput/**/reports/
+      - name: Threshold check
+        run: |
+          report=$(find StrykerOutput -name 'mutation-report.json' | head -1)
+          [ -n "$report" ] || { echo "No report found"; exit 1; }
+          total=$(jq '[.files[].mutants[]] | length' "$report")
+          killed=$(jq '[.files[].mutants[] | select(.status == "Killed")] | length' "$report")
+          score=$(awk -v k="$killed" -v t="$total" 'BEGIN{print (t==0)?0:(k/t*100)}')
+          echo "Mutation score: $score"
+          threshold=$(jq -r '."stryker-config".thresholds.break' stryker-config.json)
+          echo "Threshold (break): $threshold"
+          awk -v s="$score" -v t="$threshold" 'BEGIN { exit (s < t) }'

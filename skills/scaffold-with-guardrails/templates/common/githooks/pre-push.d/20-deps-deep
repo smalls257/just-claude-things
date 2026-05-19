@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Tier: critical (pre-push). Deep trivy scan — vuln + config + secrets, full repo.
+set -uo pipefail
+GATE="20-deps-deep"
+GATE_DIR="$(dirname "${BASH_SOURCE[0]}")"
+# shellcheck source=../_output.sh
+. "$(dirname "$GATE_DIR")/_output.sh"
+
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+TOOL="${REPO_ROOT}/.tools/trivy"
+[ -x "$TOOL" ] || TOOL="$(command -v trivy 2>/dev/null || true)"
+if [ -z "$TOOL" ] || [ ! -x "$TOOL" ]; then
+  gate_missing_tool "$GATE" "trivy" "Required for deep dep/config/secret scan on push."
+  exit 2
+fi
+
+out=$( "$TOOL" fs --scanners vuln,config,secret --severity HIGH,CRITICAL \
+                  --quiet --exit-code 1 "$REPO_ROOT" 2>&1 )
+code=$?
+if [ "$code" -ne 0 ]; then
+  if [ "$code" -gt 1 ]; then
+    gate_tool_error "$GATE" "trivy" "$code" "$out"
+    exit 3
+  fi
+  printf '%s\n' "$out" | gate_fail_block "$GATE" "trivy (deep)"
+  echo "  Fix: upgrade vulnerable deps / resolve config findings, or document waivers." >&2
+  exit 1
+fi
+exit 0

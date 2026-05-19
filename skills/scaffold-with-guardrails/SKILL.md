@@ -81,3 +81,18 @@ docs + machine-enforced architectural rules + Claude-only hooks.
 - `templates/csharp/scaffold.md`
 - `hooks/pre-commit.sh`, `hooks/pre-push.sh`, `hooks/stop-neg-audit.sh`
 - `GRILL-LOOP.md`, `PREREQ-CHECK.md`, `FRONTMATTER-FORMAT.md`, `NEG-AUDIT.md`
+
+## Testing
+
+bats-core is vendored as submodules under `tests/` (`_bats`, `_bats-support`,
+`_bats-assert`). Run all tests with:
+
+```
+bats skills/scaffold-with-guardrails/tests/
+```
+
+Helpers live in `tests/bats-helpers/`:
+- `fixtures.bash` — temp-repo setup (`new_repo`, `install_gates_template`, `cleanup_repo`).
+- `assertions.bash` — gate-specific assertions (`assert_gate_blocked`, `assert_verified_trailer`).
+
+New gate tests go in `tests/gates/*.bats`.

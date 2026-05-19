@@ -1,0 +1,21 @@
+name: Tools Pin Check
+on:
+  schedule:
+    - cron: '0 9 1 * *'   # First of month
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify pins populated
+        id: verify
+        run: ./scripts/verify-tool-pins.sh
+        continue-on-error: true
+      - name: Open issue if stale
+        if: steps.verify.outcome == 'failure'
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Tool pins are stale or unpopulated"
+          content-filepath: .tools/manifest.toml
+          labels: dependencies, gates

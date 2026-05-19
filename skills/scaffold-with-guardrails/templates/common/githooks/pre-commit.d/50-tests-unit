@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Tier: standard. Stack-conditional unit test run.
+set -uo pipefail
+GATE="50-tests-unit"
+GATE_DIR="$(dirname "${BASH_SOURCE[0]}")"
+# shellcheck source=../_output.sh
+. "$(dirname "$GATE_DIR")/_output.sh"
+
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+
+# Stack detectors (cheap, no tool dependency).
+has_dotnet_unit_tests() {
+  # bounded find — looks for tests/**/*.Tests.Unit.csproj without globstar
+  find "$REPO_ROOT/tests" -maxdepth 4 -name '*.Tests.Unit.csproj' -print -quit 2>/dev/null | grep -q .
+}
+has_python_tests() {
+  [ -d "$REPO_ROOT/tests" ] && [ -f "$REPO_ROOT/pyproject.toml" ]
+}
+has_npm_test_unit() {
+  [ -f "$REPO_ROOT/package.json" ] && grep -q '"test:unit"' "$REPO_ROOT/package.json"
+}
+
+# .NET — first matching stack wins (sequential exit-on-detect mirrors plan intent)
+if has_dotnet_unit_tests; then
+  if ! command -v dotnet >/dev/null 2>&1; then
+    gate_missing_tool "$GATE" "dotnet" "Required to run .NET unit tests."
+    exit 2
+  fi
+  out=$( cd "$REPO_ROOT" && dotnet test --filter "FullyQualifiedName~Tests.Unit" --nologo --no-restore --verbosity minimal 2>&1 )
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    printf '%s\n' "$out" | gate_fail_block "$GATE" "dotnet test (unit)"
+    echo "  Fix: address failing unit tests before committing." >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+# Python
+if has_python_tests; then
+  if ! command -v pytest >/dev/null 2>&1; then
+    gate_missing_tool "$GATE" "pytest" "Required to run Python unit tests."
+    exit 2
+  fi
+  out=$( cd "$REPO_ROOT" && pytest -q -m "not integration" 2>&1 )
+  code=$?
+  # pytest exit 5 = "no tests collected" (e.g., marker matches zero tests).
+  # That means the gate's applicability check was over-broad; treat as self-skip
+  # rather than fail. Better to under-block than false-block.
+  if [ "$code" -eq 5 ]; then
+    exit 77
+  fi
+  if [ "$code" -ne 0 ]; then
+    printf '%s\n' "$out" | gate_fail_block "$GATE" "pytest"
+    echo "  Fix: address failing tests." >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+# TypeScript / JavaScript — npm script "test:unit"
+if has_npm_test_unit; then
+  if ! command -v npm >/dev/null 2>&1; then
+    gate_missing_tool "$GATE" "npm" "Required to run JS/TS unit tests."
+    exit 2
+  fi
+  out=$( cd "$REPO_ROOT" && npm run -s test:unit 2>&1 )
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    printf '%s\n' "$out" | gate_fail_block "$GATE" "npm test:unit"
+    echo "  Fix: address failing tests." >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+# No applicable stack detected → self-skip.
+exit 77

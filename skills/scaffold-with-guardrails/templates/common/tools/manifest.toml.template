@@ -1,0 +1,45 @@
+# Pinned tool versions. Checksums are placeholders — bootstrap fills via
+# verify-tool-pins.sh on first run; commit the resulting file.
+
+# Convention:
+#   - Canonical platform keys: sha256_{linux,darwin,windows}_{x86_64,arm64}
+#   - url_template placeholders ({version}, {os}, {arch}) are NAIVE — vendor
+#     release schemes diverge (gitleaks uses linux_x64, trivy uses Linux-64bit,
+#     scc uses x86_64-unknown-linux). bootstrap.sh maps canonical keys to
+#     vendor-specific URLs in fetch_tool(); don't trust naive substitution here.
+
+[gitleaks]
+version = "8.21.2"
+url_template = "https://github.com/gitleaks/gitleaks/releases/download/v{version}/gitleaks_{version}_{os}_{arch}.tar.gz"
+sha256_linux_x86_64 = "REPLACE_ME"
+sha256_linux_arm64 = "REPLACE_ME"
+sha256_darwin_x86_64 = "REPLACE_ME"
+sha256_darwin_arm64 = "REPLACE_ME"
+sha256_windows_x86_64 = "REPLACE_ME"
+
+[trivy]
+version = "0.58.1"
+url_template = "https://github.com/aquasecurity/trivy/releases/download/v{version}/trivy_{version}_{os}-{arch}.tar.gz"
+sha256_linux_x86_64 = "REPLACE_ME"
+sha256_linux_arm64 = "REPLACE_ME"
+sha256_darwin_x86_64 = "REPLACE_ME"
+sha256_darwin_arm64 = "REPLACE_ME"
+sha256_windows_x86_64 = "REPLACE_ME"
+
+[scc]
+version = "3.4.0"
+url_template = "https://github.com/boyter/scc/releases/download/v{version}/scc_{version}_{os}_{arch}.tar.gz"
+sha256_linux_x86_64 = "REPLACE_ME"
+sha256_linux_arm64 = "REPLACE_ME"
+sha256_darwin_x86_64 = "REPLACE_ME"
+sha256_darwin_arm64 = "REPLACE_ME"
+sha256_windows_x86_64 = "REPLACE_ME"
+
+[semgrep]
+# Installed via pipx, not binary download
+install_method = "pipx"
+version = "1.95.0"
+
+[lizard]
+install_method = "pipx"
+version = "1.17.10"
