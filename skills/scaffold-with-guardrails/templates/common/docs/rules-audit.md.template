@@ -1,0 +1,36 @@
+# Semgrep Rule Pack Audit
+
+Maps each vendored community pack rule to the negentropic Violation Guide.
+Run quarterly to catch drift.
+
+## Packs in use
+
+| Pack | Source | License | Last refreshed |
+|------|--------|---------|----------------|
+| owasp-top-ten | https://semgrep.dev/p/owasp-top-ten | LGPL-2.1 | YYYY-MM-DD |
+| csharp | https://semgrep.dev/p/csharp | LGPL-2.1 | YYYY-MM-DD |
+
+## Rule → Violation mapping (sample — fill in during audit)
+
+| Pack | Rule ID | Catches | Maps to |
+|------|---------|---------|---------|
+| owasp-top-ten | hardcoded-secret | embedded credentials | (covered by gitleaks; consider disabling here) |
+| csharp | empty-catch | empty `catch {}` | Silent Fallback (already custom in `.semgrep/<app>/quality.yaml`) |
+| csharp | use-startswith-instead | string ops | Computational Friction (low-value; demote/disable?) |
+
+## Overlap with custom rules
+
+List rules in vendored packs that are already covered by `.semgrep/<app>/`.
+Disable the duplicate in the pack (via `--exclude-rule <id>`) to keep output clean.
+
+## Promotion / demotion candidates
+
+- Rules to promote from warn → error in `regulated` profile
+- Rules to demote from error → warn (too noisy)
+- Rules to disable entirely (low signal)
+
+## Effort log
+
+| Date | Reviewer | Notes |
+|------|----------|-------|
+| YYYY-MM-DD | name | Initial audit; demoted N rules, promoted M. |

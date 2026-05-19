@@ -1,0 +1,52 @@
+# EditorConfig — shared baseline. Per-language overrides extend, don't replace.
+# https://editorconfig.org
+
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+max_line_length = 120
+
+[*.{md,markdown}]
+trim_trailing_whitespace = false  # markdown line breaks rely on trailing spaces
+max_line_length = off
+
+[*.{yml,yaml,json,toml}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+# Python — PEP 8 / ruff
+[*.py]
+indent_size = 4
+max_line_length = 100
+
+# C#
+[*.{cs,csx}]
+indent_size = 4
+# Built-in .NET diagnostic severities — IDE0xxx / CAxxxx.
+dotnet_diagnostic.CA1822.severity = warning   # mark as static
+dotnet_diagnostic.CA2007.severity = none      # ConfigureAwait — app code; suppress
+dotnet_diagnostic.IDE0058.severity = none     # unused expression value
+dotnet_sort_system_directives_first = true
+csharp_new_line_before_open_brace = all
+csharp_prefer_braces = true:warning
+csharp_style_namespace_declarations = file_scoped:warning
+
+# TypeScript / JavaScript
+[*.{ts,tsx,js,jsx}]
+indent_size = 2
+
+# XML / csproj / props / targets
+[*.{xml,csproj,props,targets,xaml}]
+indent_size = 2
+
+# Shell
+[*.{sh,bash}]
+indent_size = 2

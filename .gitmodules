@@ -1,0 +1,9 @@
+[submodule "skills/scaffold-with-guardrails/tests/_bats"]
+	path = skills/scaffold-with-guardrails/tests/_bats
+	url = https://github.com/bats-core/bats-core.git
+[submodule "skills/scaffold-with-guardrails/tests/_bats-support"]
+	path = skills/scaffold-with-guardrails/tests/_bats-support
+	url = https://github.com/bats-core/bats-support.git
+[submodule "skills/scaffold-with-guardrails/tests/_bats-assert"]
+	path = skills/scaffold-with-guardrails/tests/_bats-assert
+	url = https://github.com/bats-core/bats-assert.git

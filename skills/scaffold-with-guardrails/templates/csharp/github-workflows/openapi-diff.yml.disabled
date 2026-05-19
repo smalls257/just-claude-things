@@ -1,0 +1,52 @@
+# Rename to .yml after your Api host exposes an OpenAPI document
+# (e.g., builder.Services.AddOpenApi() + app.MapOpenApi() in Program.cs,
+# which writes to /openapi/v1.json in dev — capture it at build time).
+name: OpenAPI Diff
+on:
+  pull_request:
+    paths:
+      - 'src/**/*.csproj'
+      - 'src/**/*.cs'
+      - 'docs/openapi/**'
+  workflow_dispatch:
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '9.0.x' }
+
+      - name: Build Api
+        run: dotnet build -p:SKIP_SEMGREP=1 src/*.Api/*.Api.csproj
+
+      - name: Generate current OpenAPI spec
+        # Adjust to your spec-gen approach: Microsoft.Extensions.ApiDescription.Server
+        # `dotnet getdocument` is the supported path; configure in csproj.
+        run: |
+          mkdir -p artifacts
+          dotnet getdocument --project src/*.Api/*.Api.csproj --output artifacts/openapi.head.json || \
+            { echo "::warning::OpenAPI generation not configured. See https://learn.microsoft.com/en-us/aspnet/core/fundamentals/openapi/aspnetcore-openapi"; exit 0; }
+
+      - name: Checkout base branch spec
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          git show "origin/${{ github.event.pull_request.base.ref }}":docs/openapi/openapi.json > artifacts/openapi.base.json 2>/dev/null || \
+            { echo "No base spec at docs/openapi/openapi.json — skipping diff."; exit 0; }
+
+      - name: Compare specs (oasdiff)
+        uses: tufin/oasdiff-action/diff@main
+        with:
+          base: artifacts/openapi.base.json
+          revision: artifacts/openapi.head.json
+          fail-on-diff: false
+          format: text
+
+      - name: Breaking-change check
+        uses: tufin/oasdiff-action/breaking@main
+        with:
+          base: artifacts/openapi.base.json
+          revision: artifacts/openapi.head.json
+          fail-on: ERR

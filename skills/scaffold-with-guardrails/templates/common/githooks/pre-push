@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -uo pipefail
+HOOK_NAME="pre-push"
+HOOK_DIR="$(dirname "$0")/pre-push.d"
+[ "${1:-}" = "--self-test" ] && { echo "pre-push dispatcher reachable"; exit 0; }
+# shellcheck source=./_dispatcher
+. "$(dirname "$0")/_dispatcher"

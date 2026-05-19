@@ -1,0 +1,46 @@
+# Rename to .yml to enable. Replays pre-PR gates in CI as a backstop.
+name: Gates Backstop
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Install gate tools (system packages)
+        run: |
+          set -euo pipefail
+          # gitleaks
+          GL_VER="8.18.4"
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VER}/gitleaks_${GL_VER}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          # trivy
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sudo sh -s -- -b /usr/local/bin
+          # scc
+          SCC_VER="3.4.0"
+          curl -sSL "https://github.com/boyter/scc/releases/download/v${SCC_VER}/scc_Linux_x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin scc
+          # semgrep, lizard via pipx (preinstalled on ubuntu-latest)
+          pipx install semgrep
+          pipx install lizard
+      - name: Bootstrap (offline — wire hooks only)
+        run: ./scripts/bootstrap.sh --offline
+      - name: Replay gates over PR range
+        if: github.event_name == 'pull_request'
+        run: ./scripts/run-gates-ci.sh ${{ github.event.pull_request.base.sha }}..HEAD
+      - name: Audit bypass commits
+        if: github.event_name == 'pull_request'
+        run: |
+          range="${{ github.event.pull_request.base.sha }}..HEAD"
+          bypasses=$(git log --grep='Verified: no' --grep='Verified: partial' "$range" || true)
+          if [ -n "$bypasses" ]; then
+            echo "$bypasses"
+            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+            if ! echo "$labels" | grep -q 'unsafe-skip'; then
+              echo "PR contains bypassed commits without 'unsafe-skip' label. Failing."
+              exit 1
+            fi
+          fi

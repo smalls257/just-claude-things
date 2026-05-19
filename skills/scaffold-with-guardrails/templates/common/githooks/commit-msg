@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -uo pipefail
+HOOK_NAME="commit-msg"
+HOOK_DIR="$(dirname "$0")/commit-msg.d"
+[ "${1:-}" = "--self-test" ] && { echo "commit-msg dispatcher reachable"; exit 0; }
+COMMIT_MSG_FILE="$1"
+export COMMIT_MSG_FILE
+# shellcheck source=./_dispatcher
+. "$(dirname "$0")/_dispatcher"
