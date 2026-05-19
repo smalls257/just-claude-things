@@ -1,6 +1,6 @@
 ---
 name: scaffold-with-guardrails
-description: Use when starting a new project after tech design is complete. Generates the repo scaffold (per the design), root CLAUDE.md, per-module AGENTS.md with IDed architectural rules, matching semgrep rules, NetArchTest arch tests, and Claude-only git hooks. Triggers include "scaffold the repo", "set up the project", "wire in arch tests", "bootstrap new app".
+description: Use when starting a new project after tech design is complete. Generates the repo scaffold (per the design), root CLAUDE.md, per-module AGENTS.md with IDed architectural rules, matching semgrep rules, NetArchTest arch tests, Claude-only git hooks, and optionally populates Domain/Persistence/API skeletons from XML-tagged tech-design sections (Phase-2). Triggers include "scaffold the repo", "set up the project", "wire in arch tests", "bootstrap new app".
 ---
 
 # scaffold-with-guardrails
@@ -26,6 +26,11 @@ docs + machine-enforced architectural rules + Claude-only hooks.
 - One NetArchTest test per arch rule in `tests/<App>.Tests.Unit/Architecture/`
 - `Directory.Build.targets` — semgrep gate BeforeTargets="Build"
 - `.claude/settings.json` + `.claude/hooks/{pre-commit,pre-push,stop-neg-audit}.sh`
+- **(Phase-2, opt-in)** Domain entity classes, Dapper row types, C# enums,
+  API DTO records, minimal route stubs, xUnit skip-stub tests, and a
+  single `migrations/0001_initial_schema.sql` bootstrap — generated from
+  `<module>` / `<entities>` / `<enums>` / `<contracts>` / `<endpoints>`
+  tags in the tech-design doc. See `TECH-DESIGN-TAGS.md`.
 
 ## Process
 
@@ -62,6 +67,10 @@ docs + machine-enforced architectural rules + Claude-only hooks.
    - Every Component has matching dir + `AGENTS.md` + at least one arch rule?
 10. **Close.** `status: complete` in the tech design doc only after scaffold
     validates AND neg-audit passes.
+11. **Phase-2 handoff.** Follow the "Phase-1 → Phase-2 handoff" section at
+    the bottom of `templates/csharp/scaffold.md`. If the tech-design has
+    `<module>` tags AND the user opts in, follow
+    `templates/csharp/scaffold-phase-2.md` exactly.
 
 ## Hard rules
 
