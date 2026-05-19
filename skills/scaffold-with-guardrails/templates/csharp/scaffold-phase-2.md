@@ -132,6 +132,10 @@ materializer target).
 
 ### Domain entity — `src/{{APP_NAME}}.Domain/{{MODULE}}/{{ENTITY}}.cs`
 
+`{{ENTITY}}` = the H3 heading text inside `<entities>`, stripped of the `### ` prefix and any whitespace. Use verbatim as the C# class name and as `{{ITEM}}` in the file header. If the heading contains a parenthetical descriptor (e.g., `### Order (aggregate root)`), strip everything from the first `(` onward.
+
+This same rule applies to enum/contract/endpoint heading text but is stated here because Task 5 is the first generation section to consume it. Task 6 will inherit the rule.
+
 Map the SQL CREATE TABLE to a C# class:
 
 | SQL type | C# type |
@@ -145,6 +149,7 @@ Map the SQL CREATE TABLE to a C# class:
 | `TIMESTAMP` | `DateTime` |
 | `BOOLEAN` | `bool` |
 | `NUMERIC(p,s)` | `decimal` |
+| Any other SQL type | `object` — log as a gap in the summary report; dev resolves |
 
 Entity template:
 
@@ -159,11 +164,11 @@ public sealed class {{ENTITY}}
     public {{TYPE}} {{PROPERTY}} { get; private set; }
     // ... one private-set property per SQL column ...
 
-    private {{ENTITY}}() { } // Dapper materializer
+    private {{ENTITY}}() { } // Object-initializer use by Create. Dapper hydrates {{ENTITY}}Row, not the Domain entity.
 
     // TODO: invariants from tech-design — {{INVARIANTS_QUOTE}}
     public static {{ENTITY}} Create({{CREATE_PARAMS}})
-        => throw new NotImplementedException("TODO: enforce invariants");
+        => throw new NotImplementedException("TODO: enforce {{ENTITY}} invariants");
 }
 ```
 
@@ -190,6 +195,7 @@ internal sealed record {{ENTITY}}Row(
 ```
 
 Notes:
+- Dapper materializes the row type, not the Domain entity. A repository/mapper in Persistence converts Row → Domain (authored by devs).
 - Row type is `internal` — never exposed past the Persistence layer.
 - `string` for enum columns in the row type (raw DB value). Domain entity
   parses the enum.
@@ -214,11 +220,11 @@ public sealed class Order
     public long TotalCents { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
 
-    private Order() { } // Dapper materializer
+    private Order() { } // Object-initializer use by Create. Dapper hydrates OrderRow, not the Domain entity.
 
     // TODO: invariants from tech-design — total_cents > 0; status transitions pending→approved|denied only.
     public static Order Create(Guid customerId, long totalCents)
-        => throw new NotImplementedException("TODO: enforce invariants");
+        => throw new NotImplementedException("TODO: enforce Order invariants");
 }
 ```
 
