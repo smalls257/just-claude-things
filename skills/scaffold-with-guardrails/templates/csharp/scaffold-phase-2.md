@@ -473,9 +473,98 @@ CREATE TABLE customers (
   (Task 8) as a "FK forward-reference" entry so devs see them in the
   one place they always read.
 
-## Post-build validation + summary
+## Post-build validation
 
-See section below — to be filled in Task 8.
+After all files are written, run `dotnet build` from the repo root.
+
+```bash
+dotnet build
+```
+
+Expected: BUILD SUCCEEDED.
+
+If build fails:
+
+1. **Do not delete or roll back generated files.** They stay on disk.
+2. Print the compiler errors verbatim.
+3. Add a section to the summary report:
+   ```
+   dotnet build FAILED with N errors:
+     - {error 1}
+     - {error 2}
+   Files were written to disk. Inspect and fix manually.
+   ```
+4. Exit Phase-2 with non-zero status.
+
+The most common causes are:
+- A `<contract>` DTO uses a type not yet generated (e.g., `LineItem`)
+  and pre-check skipped it. Add `<entities>LineItem</entities>` to the
+  tech-design and re-run.
+- Test project missing a `using Xunit;` (if Phase-1 scaffolded tests
+  but the Xunit reference is in `Directory.Packages.props` only —
+  unlikely but possible).
+- Generated code clashes with hand-written code from a prior session
+  (file existed and was overwritten — devs should've committed first).
+
+## Summary report
+
+After successful build (or after failed-build report), print a summary:
+
+```
+=========================================
+Phase-2 Domain Populate — Summary
+=========================================
+
+Tech-design: docs/tech-design/{{SLUG}}.md
+Modules processed: Orders, Customers, Shared
+
+Migration output folder: migrations/   (or db/migrations/ if it existed)
+
+Files generated (NEW):
+  src/{{APP}}.Domain/Orders/Order.cs
+  src/{{APP}}.Domain/Orders/OrderStatus.cs
+  src/{{APP}}.Persistence/Orders/OrderRow.cs
+  src/{{APP}}.Api/Orders/Contracts/CreateOrderRequest.cs
+  src/{{APP}}.Api/Orders/Contracts/OrderResponse.cs
+  src/{{APP}}.Api/Orders/OrdersEndpoints.cs
+  tests/{{APP}}.Tests.Unit/Orders/OrderTests.cs
+  tests/{{APP}}.Tests.Integration/Orders/POST_orders_Tests.cs
+  tests/{{APP}}.Tests.Integration/Orders/GET_orders_byId_Tests.cs
+  migrations/0001_initial_schema.sql
+
+Files OVERWRITTEN (had prior contents):
+  (none)
+  -- OR --
+  src/{{APP}}.Domain/Orders/Order.cs
+  ... (lists files that existed)
+
+Pre-check substitutions:
+  (none)
+  -- OR --
+  Endpoint Orders.POST /orders Request: LineItem → object (user picked proceed)
+
+FK forward-references in migration SQL:
+  (none)
+  -- OR --
+  orders.customer_id REFERENCES customers (Customers module emitted after Orders)
+
+Build status: SUCCEEDED
+  -- OR --
+Build status: FAILED — see errors above
+
+Next steps:
+  - Fill in `// TODO` blocks in Domain entities (invariants, factories)
+  - Replace `throw new NotImplementedException()` in endpoint handlers
+  - Replace `Placeholder()` test methods with real cases
+  - Wire `app.MapOrdersEndpoints();` into Program.cs
+  - Apply migration: `psql ... < migrations/0001_initial_schema.sql`
+  - If any FK forward-references were reported above, verify table
+    emission order satisfies your CREATE constraints before applying
+
+=========================================
+```
+
+The summary is the last thing Phase-2 emits before exiting.
 
 ## File header template
 
