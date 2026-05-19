@@ -35,7 +35,11 @@ scaffold is in a known-good state.
 ## Pre-check
 
 Before generating any files, validate the tag graph end-to-end. Fail loud
-on every problem. **No silent fixes.**
+on every problem. **No silent fixes.** Tag well-formedness (e.g., balanced
+`<module>` tags, parseable attributes) was already enforced by
+`../../PREREQ-CHECK.md` per entry condition 3; this section validates the
+**semantic cross-references** between modules, entities, enums, contracts,
+and endpoints.
 
 ### Step P1: Parse all `<module>` blocks
 
@@ -45,14 +49,15 @@ For each `<module name="X">` block in the tech-design doc:
 2. For each inner tag (`<entities>`, `<enums>`, `<contracts>`, `<endpoints>`):
    - List each `### H3` item.
    - For entities: extract the SQL fence content (the `CREATE TABLE ...`
-     statement). If no SQL fence inside an entity H3 → **FAIL**: print
-     `"Entity {Module}.{Entity} missing SQL CREATE TABLE block"` and abort.
+     statement). If no SQL fence inside an entity H3 → record as a
+     **structural failure** (collected and reported by Step P4 alongside
+     cross-reference failures, so the user sees all problems at once).
 
 3. For each entity, parse the SQL CREATE TABLE to determine:
    - Column names and types (UUID, BIGINT, TEXT, TIMESTAMPTZ, etc.)
    - PK column
    - Each `CHECK (col IN ('a','b','c'))` → links to an `<enums>` entry
-   - Each `*_id UUID NOT NULL` → cross-module FK (validated in P3)
+   - Each `*_id UUID NOT NULL` → FK candidate (P3 determines whether it is same-module or cross-module)
 
 4. Record contracts and endpoints by name.
 
@@ -79,12 +84,21 @@ Run each rule. Collect all failures before prompting:
    - Failure: `"Endpoint {Module}.{POST /path} references undefined DTO {Name}"`
 
 2. **Entity column enum refs.** If an entity column has `CHECK (col IN
-   ('a','b','c'))`, that enum must exist in `<enums>` of the same module.
+   ('a','b','c'))`, that enum must exist in `<enums>` of the same module
+   **or in `<module name="Shared">`'s `<enums>`**.
    - Failure: `"Entity {Module}.{Entity}.{column} CHECK constraint references undefined enum {Name}"`
 
-3. **Cross-module entity refs forbidden.** If an entity column's type
-   appears to be another module's entity (e.g., a non-Guid C# type
-   matching `{OtherModule}.{Entity}`), fail.
+3. **Cross-module entity refs forbidden.** Two surfaces to scan:
+   - **In `<contracts>` field lists:** any field typed as
+     `{OtherModule}.{Entity}` or as `{Entity}` where `{Entity}` is defined
+     in a different module's `<entities>` block.
+   - **In `<entities>` prose (outside the SQL fence):** any sentence
+     introducing a field of type `{Entity}` (rather than a Guid ID) where
+     `{Entity}` lives in another module.
+   - SQL columns themselves use SQL primitive types (`UUID`, `BIGINT`, …) —
+     a `*_id UUID NOT NULL` column is the **correct** cross-module FK shape
+     and is not a violation. Only fail if the C#-side artifact (contract
+     field or entity prose) carries the entity-typed reference.
    - Failure: `"Entity {Module}.{Entity}.{field} references cross-module entity {OtherModule}.{Entity}. Use Guid {field}Id instead."`
 
 4. **Module name PascalCase.** `<module name="orders">` (lowercase) fails.
@@ -92,7 +106,7 @@ Run each rule. Collect all failures before prompting:
 
 ### Step P4: Gap report + user prompt
 
-If any failures collected:
+If any **structural** failures (from P1) or **cross-reference** failures (from P3) collected:
 
 ```
 Phase-2 pre-check found N issues:
@@ -108,7 +122,7 @@ with `object` placeholders? [fix/proceed]
 - If user picks `fix` → abort Phase-2 cleanly, print `"Tech-design at {path} needs updates. Re-run scaffold when ready."`
 - If user picks `proceed` → continue to generation with `object` placeholder for undefined DTO refs, `Guid` placeholder for cross-module FK leakage. **Log every substitution in the summary report.**
 
-If no failures, continue to generation silently.
+If no failures, continue to generation without a user prompt.
 
 ## Generation: entities + row types
 
