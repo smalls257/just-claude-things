@@ -334,9 +334,9 @@ public static class {{MODULE}}Endpoints
 {
     public static void Map{{MODULE}}Endpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/orders", (CreateOrderRequest req)
+        app.MapPost("/orders", IResult (CreateOrderRequest req)
             => throw new NotImplementedException("TODO: implement POST /orders"));
-        app.MapGet("/orders/{id:guid}", (Guid id)
+        app.MapGet("/orders/{id:guid}", IResult (Guid id)
             => throw new NotImplementedException("TODO: implement GET /orders/{id}"));
     }
 }
@@ -347,7 +347,8 @@ Route signature rules:
 - Path params like `{id}` become method params. Guid in path → `:guid` route constraint.
 - Request body DTO appears as `(CreateOrderRequest req)` param.
 - Response shape isn't typed at the route — it appears in the impl.
-- If the Request or Response type references an undefined DTO and the user picked `proceed` in pre-check, the route param type becomes `object` (e.g., `async (object req) => ...`). Log every such substitution in the summary report.
+- **Explicit return type `IResult` is required on every lambda** (`IResult (CreateOrderRequest req) => throw …`). Without it, the throw-expression body collapses the lambda to `Func<T, Nothing>`, which the compiler then binds to the `MapPost(string, RequestDelegate)` overload (where the delegate signature is `(HttpContext) -> Task`) instead of the `(string, Delegate)` overload — producing `CS1661`/`CS1678` because `CreateOrderRequest` is not `HttpContext`. The `IResult` token gives the lambda a concrete return type, binds the `Delegate` overload, and compiles. **Required** — do not strip it.
+- If the Request or Response type references an undefined DTO and the user picked `proceed` in pre-check, the route param type becomes `object` (e.g., `IResult (object req) => ...`). Log every such substitution in the summary report.
 - Body is always `throw new NotImplementedException("TODO: implement {METHOD} {PATH}")`.
 
 **Wiring into `Program.cs`:** Phase-2 does not modify `Program.cs`. Each module's `Map{{MODULE}}Endpoints` extension must be called explicitly — append `app.Map{{MODULE}}Endpoints();` to the endpoint-registration block in `Program.cs`. The Task 8 summary report lists every emitted endpoint extension as a wiring checklist so nothing is silently unreachable.
