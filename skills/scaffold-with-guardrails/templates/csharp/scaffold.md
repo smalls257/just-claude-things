@@ -3,6 +3,17 @@
 Canonical scaffold the skill applies when the tech-design's stack is C# / .NET 9.
 Skill grills briefly first, then runs these commands in the target repo.
 
+> **Vocabulary.** This file uses **layer** = clean-architecture project
+> (`<App>.Domain`, `<App>.Application`, `<App>.Infrastructure`,
+> `<App>.Persistence`, `<App>.Api`, `<App>.Service`, optionally
+> `<App>.Client`). `SKILL.md` and other skill docs use **module** for
+> the same thing. **Module** elsewhere in the skill (e.g., Phase-2's
+> `<module name="Catalog">` in the tech-design) means a *business
+> module* — a feature slice that cuts across layers (Domain entities,
+> Application handlers, Persistence repos). Don't conflate the two.
+> Per-layer arch tests live at `tests/<App>.Tests.Unit/Architecture/<Layer>ArchitectureTests.cs`;
+> per-business-module code lives at `src/<App>.<Layer>/<Module>/`.
+
 ## Grill questions (skill asks before scaffolding)
 
 1. **App name** (PascalCase, e.g., `ExpensePortal`)
