@@ -547,6 +547,14 @@ chmod +x scripts/*.sh
 # NuGet.Config with `<clear/>` is the canonical, authoritative override.
 # dotnet-stryker is published only on nuget.org; there is no reason to
 # consult any private feed for it.
+#
+# Symptoms this prevents (grep-bait for future debuggers):
+#   error NU1301: Unable to load the service index for source
+#     https://pkgs.dev.azure.com/.../_packaging/msft_consumption/nuget/v3/index.json
+#   Response status code does not indicate success: 401 (Unauthorized)
+#
+# protocolVersion="3" pins the NuGet v3 API (v2 is deprecated; v3 is
+# what every current nuget.org client speaks).
 cat > NuGet.Config <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>

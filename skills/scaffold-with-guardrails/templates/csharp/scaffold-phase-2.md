@@ -71,7 +71,7 @@ non-empty.
 | `.gates.toml`                                                       | gate config (thresholds, rule packs in play)                            |
 | `.gitconfig.gates`                                                  | per-repo git config that activates `.githooks/`                         |
 | `stryker-config.json`                                               | Stryker mutation-test config                                            |
-| `NuGet.Config`                                                      | project-scoped feed override (`<clear/>` + nuget.org only) — required so `dotnet tool install dotnet-stryker` cannot be wedged by an inherited Azure DevOps upstream feed returning 401 |
+| `NuGet.Config`                                                      | project-scoped feed override (`<clear/>` + nuget.org); prevents inherited Azure DevOps feed from wedging `dotnet tool install` with 401 (Silent Fallback the scaffold step exists to avoid) |
 | `docs/rules-audit.md`                                               | rules-audit doc for the OWASP / gate-system layer                       |
 
 Concrete shell forms an LLM follows literally:
