@@ -77,7 +77,10 @@ non-empty.
 Concrete shell forms an LLM follows literally:
 
 ```bash
-test -f *.sln                                                                 || echo "MISSING: *.sln"
+# `test -f *.sln` is a Silent Fallback: shell expands the glob before `test` sees it, so
+# zero matches leaves the literal `*.sln` (false-success-by-accident) and multiple matches
+# pass extra args to `test -f` (syntax error). `ls` collapses all three cases honestly.
+ls *.sln >/dev/null 2>&1                                                      || echo "MISSING: *.sln"
 test -f Directory.Build.targets                                               || echo "MISSING: Directory.Build.targets"
 test -d .semgrep && [ "$(find .semgrep -name '*.yaml' | wc -l)" -gt 0 ]       || echo "MISSING: .semgrep/*.yaml"
 test -f .claude/settings.json                                                 || echo "MISSING: .claude/settings.json"
