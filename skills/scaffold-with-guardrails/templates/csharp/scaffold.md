@@ -173,6 +173,17 @@ dotnet add src/"$APP".Service/"$APP".Service.csproj package MediatR
 dotnet add src/"$APP".Service/"$APP".Service.csproj package MassTransit
 dotnet add src/"$APP".Service/"$APP".Service.csproj package MassTransit.RabbitMQ
 dotnet add tests/"$APP".Tests.Unit/"$APP".Tests.Unit.csproj package NetArchTest.Rules
+
+# Swagger UI — adds the static-asset host package. The OpenAPI document
+# itself is still produced by Microsoft.AspNetCore.OpenApi (pulled in by
+# `dotnet new webapi`); SwaggerUI only serves the rendering harness.
+# Pinned in Directory.Packages.props, so this writes a versionless
+# PackageReference under ManagePackageVersionsCentrally=true.
+# (Doing it here, BEFORE the Program.cs rewrite below, means a reader
+# who hand-edits Program.cs to add `app.UseSwaggerUI(...)` has the
+# package already present and avoids a second `dotnet add package` step
+# that would re-trigger the Version-strip dance.)
+dotnet add src/"$APP".Api/"$APP".Api.csproj package Swashbuckle.AspNetCore.SwaggerUI
 ```
 
 ### Directory.Packages.props version pins
@@ -241,18 +252,11 @@ to confirm the host boots, options bind, and the kestrel routing table
 is alive. Swagger UI and `MapOpenApi` are gated to the Development
 environment so production never serves the doc surface.
 
-Add the Swagger UI package reference to `src/<App>.Api/<App>.Api.csproj`
-alongside `Microsoft.AspNetCore.OpenApi`:
-
-```xml
-<PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-<PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" />
-```
-
-(The version is pinned in `Directory.Packages.props`. The package ships
-the static UI assets only — the OpenAPI document itself is still
-produced by `Microsoft.AspNetCore.OpenApi`, so there are no duplicate
-generators.)
+(The `Swashbuckle.AspNetCore.SwaggerUI` package was added in the bash
+block above alongside the other `dotnet add package` calls. Version is
+pinned in `Directory.Packages.props`. The package ships the static UI
+assets only — the OpenAPI document itself is still produced by
+`Microsoft.AspNetCore.OpenApi`, so there are no duplicate generators.)
 
 ```csharp
 using <App>.Api.Configuration;
