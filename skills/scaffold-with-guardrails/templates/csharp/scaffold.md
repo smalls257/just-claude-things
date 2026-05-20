@@ -722,12 +722,12 @@ public class DomainArchitectureTests
     public void Domain_HasNoInfrastructureProjectReferences()
     {
         var forbidden = new HashSet<string>(ForbiddenDependencies, StringComparer.Ordinal);
-        foreach (var refName in DomainAssembly.GetReferencedAssemblies())
-        {
-            var name = refName.Name ?? string.Empty;
-            Assert.False(forbidden.Contains(name),
-                $"Domain has forbidden project reference: {name}");
-        }
+        var offenders = DomainAssembly.GetReferencedAssemblies()
+            .Select(r => r.Name ?? string.Empty)
+            .Where(forbidden.Contains)
+            .ToArray();
+        Assert.True(offenders.Length == 0,
+            $"Domain has forbidden project references: {string.Join(", ", offenders)}");
     }
 }
 ```
