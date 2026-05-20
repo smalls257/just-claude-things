@@ -54,12 +54,45 @@ def test_emits_row_tasks_one_per_entity():
     assert author_row["columns"][0]["cs_type"] == "Guid"
 
 
-def test_emits_enum_task_from_check_in_constraint():
+def test_emits_enum_task_explicit_wins_over_implicit():
+    # The fixture has BOTH an explicit <enums>ReadingStatus (bullet list) AND
+    # an implicit CHECK IN on Book.status with the same values. Explicit wins
+    # via value-set dedup; the implicit derived name is suppressed.
     result = phase2_parse.parse(FIXTURE.read_text(encoding="utf-8"))
     enum_tasks = [t for t in result["tasks"] if t["type"] == "enum"]
     assert len(enum_tasks) == 1
 
-    book_status = enum_tasks[0]
-    assert book_status["name"] == "BookStatus"
-    assert book_status["module"] == "Library"
-    assert book_status["values"] == ["unread", "reading", "completed", "abandoned"]
+    reading_status = enum_tasks[0]
+    assert reading_status["name"] == "ReadingStatus"
+    assert reading_status["module"] == "Library"
+    assert reading_status["values"] == ["unread", "reading", "completed", "abandoned"]
+
+
+def test_implicit_enum_emitted_when_no_explicit_block_matches_values():
+    # If a CHECK IN has values that don't match any explicit enum, the
+    # implicit {Entity}{Column} enum IS emitted — the dedup only fires
+    # on value-set equality.
+    fake_design = '''---
+slug: x
+---
+# X
+<module name="X">
+<entities>
+
+### Order
+
+```sql
+CREATE TABLE orders (
+  id UUID PRIMARY KEY,
+  state TEXT NOT NULL CHECK (state IN ('open','paid','shipped'))
+);
+```
+
+**Invariants:** state transitions monotonic.
+</entities>
+</module>'''
+    result = phase2_parse.parse(fake_design)
+    enum_tasks = [t for t in result["tasks"] if t["type"] == "enum"]
+    assert len(enum_tasks) == 1
+    assert enum_tasks[0]["name"] == "OrderState"
+    assert enum_tasks[0]["values"] == ["open", "paid", "shipped"]

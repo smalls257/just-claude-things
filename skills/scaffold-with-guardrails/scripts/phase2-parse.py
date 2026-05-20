@@ -140,13 +140,15 @@ def _extract_entity_tasks(markdown: str) -> list[dict]:
 
 
 def _extract_enum_tasks(markdown: str) -> list[dict]:
-    tasks = []
+    explicit: list[dict] = []
+    implicit: list[dict] = []
     for mod_match in re.finditer(
         r'<module\s+name="([^"]+)">(.*?)</module>', markdown, re.DOTALL
     ):
         module = mod_match.group(1)
         body = mod_match.group(2)
-        # Explicit <enums> block (preferred form).
+        # Explicit <enums> block (preferred form). Values may be a fenced code
+        # block (```\n...```) OR a markdown bullet list (- value).
         for enums_match in re.finditer(r"<enums>(.*?)</enums>", body, re.DOTALL):
             for h3 in re.finditer(
                 r"^###\s+(\S+).*?(?=^###\s|\Z)",
@@ -154,13 +156,17 @@ def _extract_enum_tasks(markdown: str) -> list[dict]:
                 re.MULTILINE | re.DOTALL,
             ):
                 name = h3.group(1)
-                values_match = re.search(
-                    r"```\n([\s\S]+?)```", h3.group(0)
-                )
-                if not values_match:
-                    continue
-                values = [v.strip() for v in values_match.group(1).split() if v.strip()]
-                tasks.append({"type": "enum", "module": module, "name": name, "values": values})
+                chunk = h3.group(0)
+                values: list[str] = []
+                fenced = re.search(r"```\n([\s\S]+?)```", chunk)
+                if fenced:
+                    values = [v.strip() for v in fenced.group(1).split() if v.strip()]
+                else:
+                    bullets = re.findall(r"^\s*[-*]\s+(\S+)\s*$", chunk, re.MULTILINE)
+                    values = [b.strip() for b in bullets if b.strip()]
+                if not values:
+                    continue  # heading with neither fence nor bullets — surface as gap
+                explicit.append({"type": "enum", "module": module, "name": name, "values": values})
 
         # Implicit enum: TEXT CHECK (col IN ('a','b',...)) -> enum named {Entity}{ColumnPascal}.
         entities_match = re.search(r"<entities>(.*?)</entities>", body, re.DOTALL)
@@ -181,13 +187,21 @@ def _extract_enum_tasks(markdown: str) -> list[dict]:
                     values_raw = check_in.group(2)
                     values = [v.strip().strip("'\"") for v in values_raw.split(",")]
                     enum_name = f"{entity_name}{_pascal_case(column)}"
-                    tasks.append({
+                    implicit.append({
                         "type": "enum",
                         "module": module,
                         "name": enum_name,
                         "values": values,
                     })
-    return tasks
+
+    # Dedup: implicit enum whose value-set matches an explicit one is dropped.
+    # Explicit declarations are canonical; CHECK IN is enforcement, not a new type.
+    explicit_value_sets = {(e["module"], frozenset(e["values"])) for e in explicit}
+    deduped_implicit = [
+        i for i in implicit
+        if (i["module"], frozenset(i["values"])) not in explicit_value_sets
+    ]
+    return explicit + deduped_implicit
 
 
 if __name__ == "__main__":
