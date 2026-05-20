@@ -151,7 +151,7 @@ slug: x
 def test_emits_route_tasks_from_routes_block():
     result = phase2_parse.parse(FIXTURE.read_text(encoding="utf-8"))
     route_tasks = [t for t in result["tasks"] if t["type"] == "route"]
-    assert len(route_tasks) == 2
+    assert len(route_tasks) == 5
 
     post = next(t for t in route_tasks if t["method"] == "POST")
     assert post["module"] == "Library"
@@ -163,3 +163,24 @@ def test_emits_route_tasks_from_routes_block():
     assert get["path"] == "/authors/{id}"
     assert get["request"] is None
     assert get["response"] == "AuthorResponse"
+
+    post_books = next(
+        t for t in route_tasks if t["method"] == "POST" and t["path"] == "/books"
+    )
+    assert post_books["module"] == "Library"
+    assert post_books["request"] == "CreateBookRequest"
+    assert post_books["response"] == "BookResponse"
+
+    get_book = next(
+        t for t in route_tasks if t["method"] == "GET" and t["path"] == "/books/{id}"
+    )
+    assert get_book["request"] is None
+    assert get_book["response"] == "BookResponse"
+
+    put_status = next(
+        t
+        for t in route_tasks
+        if t["method"] == "PUT" and t["path"] == "/books/{id}/status"
+    )
+    assert put_status["request"] == "UpdateStatusRequest"
+    assert put_status["response"] == "BookResponse"

@@ -102,35 +102,6 @@ unread → reading → completed | abandoned.
 
 </contracts>
 
-<endpoints>
-
-### POST /authors
-
-- Request: CreateAuthorRequest
-- Response: 201 AuthorResponse
-- Auth: required
-
-### GET /authors/{id}
-
-- Response: 200 AuthorResponse | 404
-
-### POST /books
-
-- Request: CreateBookRequest
-- Response: 201 BookResponse
-- Auth: required
-
-### GET /books/{id}
-
-- Response: 200 BookResponse | 404
-
-### PUT /books/{id}/status
-
-- Request: UpdateStatusRequest
-- Response: 200 BookResponse | 404
-
-</endpoints>
-
 <routes>
 
 ### POST /authors
@@ -141,6 +112,20 @@ Response: `AuthorResponse`
 ### GET /authors/{id}
 
 Response: `AuthorResponse`
+
+### POST /books
+
+Request: `CreateBookRequest`
+Response: `BookResponse`
+
+### GET /books/{id}
+
+Response: `BookResponse`
+
+### PUT /books/{id}/status
+
+Request: `UpdateStatusRequest`
+Response: `BookResponse`
 
 </routes>
 
