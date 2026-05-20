@@ -134,10 +134,21 @@ dotnet add src/"$APP".Persistence/"$APP".Persistence.csproj \
   reference src/"$APP".Application/"$APP".Application.csproj \
              src/"$APP".Domain/"$APP".Domain.csproj
 
-# Test project refs
+# Test project refs — Tests.Unit must reference EVERY layer it tests.
+# The arch-test bullet below ("one per layer") means we emit a
+# DomainArchitectureTests, ApplicationArchitectureTests, etc. — each one
+# does `typeof(<App>.<Layer>.AssemblyMarker).Assembly` to anchor the
+# NetArchTest scan, so the marker's assembly MUST be referenced or the
+# test file won't compile (CS0246 on the namespace). Skipping refs here
+# is the canonical Forensic-Coding trap: the failure surfaces as a
+# cryptic CS0246 mid-build, and the reader has to reverse-engineer that
+# the playbook's "add refs" step undercounted vs. the "one test per
+# layer" step. Add all four src-layer refs explicitly.
 dotnet add tests/"$APP".Tests.Unit/"$APP".Tests.Unit.csproj \
   reference src/"$APP".Domain/"$APP".Domain.csproj \
-             src/"$APP".Application/"$APP".Application.csproj
+             src/"$APP".Application/"$APP".Application.csproj \
+             src/"$APP".Infrastructure/"$APP".Infrastructure.csproj \
+             src/"$APP".Persistence/"$APP".Persistence.csproj
 
 # Both hosts reference all four layers (composition root)
 for HOST in Api Service; do
