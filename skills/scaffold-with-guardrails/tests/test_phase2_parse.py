@@ -153,14 +153,16 @@ def test_emits_route_tasks_from_routes_block():
     route_tasks = [t for t in result["tasks"] if t["type"] == "route"]
     assert len(route_tasks) == 5
 
-    post = next(t for t in route_tasks if t["method"] == "POST")
+    post = next(
+        t for t in route_tasks if t["method"] == "POST" and t["path"] == "/authors"
+    )
     assert post["module"] == "Library"
-    assert post["path"] == "/authors"
     assert post["request"] == "CreateAuthorRequest"
     assert post["response"] == "AuthorResponse"
 
-    get = next(t for t in route_tasks if t["method"] == "GET")
-    assert get["path"] == "/authors/{id}"
+    get = next(
+        t for t in route_tasks if t["method"] == "GET" and t["path"] == "/authors/{id}"
+    )
     assert get["request"] is None
     assert get["response"] == "AuthorResponse"
 
