@@ -14,10 +14,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using System;
+using {{APP_NAME}}.Api.{{MODULE}}.Contracts;
 
 namespace {{APP_NAME}}.Api.{{MODULE}};
-
-using {{APP_NAME}}.Api.{{MODULE}}.Contracts;
 
 public static class {{MODULE}}Endpoints
 {
