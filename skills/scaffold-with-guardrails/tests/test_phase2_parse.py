@@ -52,3 +52,14 @@ def test_emits_row_tasks_one_per_entity():
     assert author_row["module"] == "Library"
     assert author_row["columns"][0]["cs_name"] == "Id"
     assert author_row["columns"][0]["cs_type"] == "Guid"
+
+
+def test_emits_enum_task_from_check_in_constraint():
+    result = phase2_parse.parse(FIXTURE.read_text(encoding="utf-8"))
+    enum_tasks = [t for t in result["tasks"] if t["type"] == "enum"]
+    assert len(enum_tasks) == 1
+
+    book_status = enum_tasks[0]
+    assert book_status["name"] == "BookStatus"
+    assert book_status["module"] == "Library"
+    assert book_status["values"] == ["unread", "reading", "completed", "abandoned"]

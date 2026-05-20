@@ -13,11 +13,12 @@ def parse(markdown: str) -> dict:
     app_name_hint = modules[0] if len(modules) == 1 else ""
     entity_tasks = _extract_entity_tasks(markdown)
     row_tasks = [_entity_to_row_task(e) for e in entity_tasks]
+    enum_tasks = _extract_enum_tasks(markdown)
     return {
         "app_name_hint": app_name_hint,
         "slug": slug,
         "modules": modules,
-        "tasks": entity_tasks + row_tasks,
+        "tasks": entity_tasks + row_tasks + enum_tasks,
     }
 
 
@@ -135,6 +136,57 @@ def _extract_entity_tasks(markdown: str) -> list[dict]:
                 "columns": _parse_create_table_columns(sql),
                 "invariants": invariants,
             })
+    return tasks
+
+
+def _extract_enum_tasks(markdown: str) -> list[dict]:
+    tasks = []
+    for mod_match in re.finditer(
+        r'<module\s+name="([^"]+)">(.*?)</module>', markdown, re.DOTALL
+    ):
+        module = mod_match.group(1)
+        body = mod_match.group(2)
+        # Explicit <enums> block (preferred form).
+        for enums_match in re.finditer(r"<enums>(.*?)</enums>", body, re.DOTALL):
+            for h3 in re.finditer(
+                r"^###\s+(\S+).*?(?=^###\s|\Z)",
+                enums_match.group(1),
+                re.MULTILINE | re.DOTALL,
+            ):
+                name = h3.group(1)
+                values_match = re.search(
+                    r"```\n([\s\S]+?)```", h3.group(0)
+                )
+                if not values_match:
+                    continue
+                values = [v.strip() for v in values_match.group(1).split() if v.strip()]
+                tasks.append({"type": "enum", "module": module, "name": name, "values": values})
+
+        # Implicit enum: TEXT CHECK (col IN ('a','b',...)) -> enum named {Entity}{ColumnPascal}.
+        entities_match = re.search(r"<entities>(.*?)</entities>", body, re.DOTALL)
+        if entities_match:
+            for h3 in re.finditer(
+                r"^###\s+(\S+).*?(?=^###\s|\Z)",
+                entities_match.group(1),
+                re.MULTILINE | re.DOTALL,
+            ):
+                entity_name = h3.group(1)
+                chunk = h3.group(0)
+                for check_in in re.finditer(
+                    r"(\w+)\s+TEXT\s+NOT\s+NULL\s+CHECK\s*\(\s*\1\s+IN\s*\((.*?)\)",
+                    chunk,
+                    re.IGNORECASE | re.DOTALL,
+                ):
+                    column = check_in.group(1)
+                    values_raw = check_in.group(2)
+                    values = [v.strip().strip("'\"") for v in values_raw.split(",")]
+                    enum_name = f"{entity_name}{_pascal_case(column)}"
+                    tasks.append({
+                        "type": "enum",
+                        "module": module,
+                        "name": enum_name,
+                        "values": values,
+                    })
     return tasks
 
 
