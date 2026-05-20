@@ -119,3 +119,30 @@ def test_emits_contract_tasks_from_bullet_lists():
     create_book = next(t for t in contracts if t["name"] == "CreateBookRequest")
     assert {"cs_type": "Guid", "cs_name": "AuthorId"} in create_book["fields"]
     assert {"cs_type": "int",  "cs_name": "PageCount"} in create_book["fields"]
+
+
+def test_contract_field_snake_case_pascalized():
+    # Locks the _pascal_case_camel snake_case branch: contract author may write
+    # snake_case bullet field names. They must be PascalCased correctly
+    # (page_count → PageCount, not Page_count).
+    fake_design = '''---
+slug: x
+---
+# X
+<module name="X">
+<contracts>
+
+### XThing
+
+- page_count: int
+- author_id: Guid
+
+</contracts>
+</module>'''
+    result = phase2_parse.parse(fake_design)
+    contracts = [t for t in result["tasks"] if t["type"] == "contract"]
+    assert len(contracts) == 1
+    assert contracts[0]["fields"] == [
+        {"cs_type": "int",  "cs_name": "PageCount"},
+        {"cs_type": "Guid", "cs_name": "AuthorId"},
+    ]
