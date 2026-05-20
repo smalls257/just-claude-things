@@ -12,11 +12,21 @@ def parse(markdown: str) -> dict:
     modules = _extract_module_names(markdown)
     app_name_hint = modules[0] if len(modules) == 1 else ""
     entity_tasks = _extract_entity_tasks(markdown)
+    row_tasks = [_entity_to_row_task(e) for e in entity_tasks]
     return {
         "app_name_hint": app_name_hint,
         "slug": slug,
         "modules": modules,
-        "tasks": entity_tasks,
+        "tasks": entity_tasks + row_tasks,
+    }
+
+
+def _entity_to_row_task(entity_task: dict) -> dict:
+    return {
+        "type": "row",
+        "module": entity_task["module"],
+        "name": entity_task["name"],
+        "columns": list(entity_task["columns"]),
     }
 
 

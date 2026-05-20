@@ -41,3 +41,14 @@ def test_entity_columns_preserve_check_in_constraints():
     status_col = next(c for c in book["columns"] if c["sql_name"] == "status")
     assert status_col["sql_type"] == "TEXT"
     assert status_col["cs_type"] == "string"
+
+
+def test_emits_row_tasks_one_per_entity():
+    result = phase2_parse.parse(FIXTURE.read_text(encoding="utf-8"))
+    row_tasks = [t for t in result["tasks"] if t["type"] == "row"]
+    assert len(row_tasks) == 2
+
+    author_row = next(t for t in row_tasks if t["name"] == "Author")
+    assert author_row["module"] == "Library"
+    assert author_row["columns"][0]["cs_name"] == "Id"
+    assert author_row["columns"][0]["cs_type"] == "Guid"
