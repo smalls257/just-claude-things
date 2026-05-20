@@ -299,6 +299,33 @@ with `object` placeholders? [fix/proceed]
 
 If no failures, continue to generation without a user prompt.
 
+### Step P5: Create per-module directories
+
+Phase-2 emits files into `src/{{APP_NAME}}.{{LAYER}}/{{MODULE}}/` and
+`tests/{{APP_NAME}}.Tests.Unit/{{MODULE}}/`. Phase-1 created the
+per-layer directories but NOT the per-module subdirectories. The
+`Write` tool creates parent dirs implicitly, but bash file emission
+(heredoc, `cat >`, `cp`) does not — and a `Write` failure mid-stream
+leaves the tree in a partially-emitted state that's hard to diff.
+Create every per-module directory up front, before any file emission:
+
+```bash
+# Run from the repo root. {{MODULE}} ranges over every <module name="…">
+# block in the tech-design. Loop in the executor — don't paste literal
+# placeholders.
+for MODULE in <every module name>; do
+  mkdir -p src/"$APP".Domain/"$MODULE"
+  mkdir -p src/"$APP".Application/"$MODULE"
+  mkdir -p src/"$APP".Persistence/"$MODULE"
+  mkdir -p src/"$APP".Api/"$MODULE"
+  mkdir -p tests/"$APP".Tests.Unit/"$MODULE"
+  mkdir -p tests/"$APP".Tests.Integration/"$MODULE"
+done
+```
+
+Idempotent — `mkdir -p` is a no-op on re-run. Re-running Phase-2
+(the documented workflow) does not need to skip this block.
+
 ## Generation: entities + row types
 
 **Documentation-only entities.** If the entity's SQL fence contains only SQL comments and no `CREATE TABLE` statement, treat the entity as documentation-only: emit **no** Domain class, **no** Row type, **no** test stub, **no** migration entry. Log the skip in the summary report's `Documentation-only entities:` section.
