@@ -691,6 +691,52 @@ dotnet build
 
 Expected: BUILD SUCCEEDED.
 
+### Endpoint-wiring check (Silent-Fallback prevention)
+
+Phase-2 emits `Map{{MODULE}}Endpoints` extensions but does NOT modify
+`Program.cs` (see Generation: route stubs). If the dev forgets to wire
+a module's extension into `Program.cs`, the build is green, semgrep is
+green, arch tests pass — but every endpoint in that module returns 404
+in production. That is a textbook **Silent Fallback**: the system
+looks correct from every observable surface and silently produces the
+wrong behaviour.
+
+Close the gap with a grep-based post-build check. For every module
+emitted by this Phase-2 run, assert `Program.cs` contains a call to
+its `Map{{MODULE}}Endpoints` extension:
+
+```bash
+# Run from repo root. $MODULES = the list of module names emitted in
+# this Phase-2 run (the executor knows it from the module loop).
+UNWIRED=()
+for MODULE in $MODULES; do
+  grep -q "app\.Map${MODULE}Endpoints(" src/"$APP".Api/Program.cs \
+    || UNWIRED+=("$MODULE")
+done
+
+if [ "${#UNWIRED[@]}" -ne 0 ]; then
+  echo "WARNING: Module endpoints emitted but NOT wired in Program.cs:" >&2
+  for M in "${UNWIRED[@]}"; do
+    echo "  - app.Map${M}Endpoints();   <-- add to Program.cs" >&2
+  done
+  echo "" >&2
+  echo "Phase-2 cannot modify Program.cs (composition is dev-owned)." >&2
+  echo "Add the missing calls before deploying, or every route in" >&2
+  echo "these modules will return 404 in production." >&2
+fi
+```
+
+Emit the warning even when the build succeeds — the build cannot
+catch this, which is exactly why the warning exists. Also mirror the
+unwired list in the summary report under a `Modules not wired in
+Program.cs:` heading so a dev reading the summary sees the gap
+without having to scroll back through the build log.
+
+The check is a **warning, not a hard failure**. The dev may have
+intentionally generated a module for later wiring, and aborting
+Phase-2 over a known-pending step would be more annoying than useful.
+The warning is the Sensor; the dev is the actuator.
+
 If build fails:
 
 1. **Do not delete or roll back generated files.** They stay on disk.
@@ -770,6 +816,11 @@ FK forward-references in migration SQL:
 Build status: SUCCEEDED
   -- OR --
 Build status: FAILED — see errors above
+
+Modules not wired in Program.cs:
+  (none — all Map<Module>Endpoints calls present)
+  -- OR --
+  Orders   <-- add `app.MapOrdersEndpoints();` to Program.cs (else routes 404)
 
 Next steps:
   - Fill in `// TODO` blocks in Domain entities (invariants, factories)
