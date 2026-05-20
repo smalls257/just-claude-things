@@ -253,10 +253,13 @@ After `dotnet new worker`, the default `Program.cs` is a minimal `Host.CreateApp
 
 **Also fix the generated `Worker.cs`.** `dotnet new worker` emits
 `_logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now)` which
-trips CA1848 (use compile-time logging delegates) and CA1727 (PascalCase
-placeholders) — both promoted to errors by `TreatWarningsAsErrors=true` on
-`src/`. Replace the `LogInformation` call with a `LoggerMessage` delegate so the
-first build is green:
+trips three gates at once: CA1848 (use compile-time logging delegates) and
+CA1727 (PascalCase placeholders) — both promoted to errors by
+`TreatWarningsAsErrors=true` on `src/` — and `quality.yaml`'s
+`<APP-KEY>-QUAL-R005 library-no-datetime-now` rule, which is
+`Program.cs`-excluded only. Replace the `LogInformation` call with a
+`LoggerMessage` delegate AND use `DateTimeOffset.UtcNow` so the first build
+is green and the semgrep gate stays quiet:
 
 ```csharp
 public sealed class Worker(ILogger<Worker> logger) : BackgroundService
@@ -273,13 +276,18 @@ public sealed class Worker(ILogger<Worker> logger) : BackgroundService
         {
             if (logger.IsEnabled(LogLevel.Information))
             {
-                LogHeartbeat(logger, DateTimeOffset.Now, null);
+                LogHeartbeat(logger, DateTimeOffset.UtcNow, null);
             }
             await Task.Delay(1000, stoppingToken);
         }
     }
 }
 ```
+
+**`UtcNow`, not `Now`** — `quality.yaml`'s `*-QUAL-R005` rule fires on
+`DateTimeOffset.Now` anywhere outside `Program.cs`, and `Worker.cs` is not
+excluded. Time math should be UTC-internal regardless; tests against
+heartbeats need a deterministic source.
 
 Or strip the heartbeat body entirely if the worker has real work to do — the
 goal is just to keep the first build clean under TWAE.
@@ -609,7 +617,7 @@ namespace {{APP_NAME}}.Tests.Unit.Architecture;
 public class DomainArchitectureTests
 {
     private static readonly Assembly DomainAssembly =
-        typeof({{APP_NAME}}.Domain.AssemblyMarker).Assembly;
+        typeof(global::{{APP_NAME}}.Domain.AssemblyMarker).Assembly;
 
     /// <summary>Enforces {{APP_KEY}}-DOMAIN-R001</summary>
     [Fact]
@@ -639,6 +647,8 @@ public class DomainArchitectureTests
     }
 }
 ```
+
+**`global::` prefix on `typeof(...)`** — the test class lives in `{{APP_NAME}}.Tests.Unit.Architecture`. Without `global::`, the C# compiler resolves `{{APP_NAME}}.Domain` against the enclosing namespace first, looking for `{{APP_NAME}}.Tests.Unit.Architecture.{{APP_NAME}}.Domain` and failing with CS0234. The `global::` prefix forces root-namespace resolution.
 
 ---
 

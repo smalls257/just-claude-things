@@ -56,6 +56,22 @@ non-empty.
 | `src/*/AGENTS.md` (≥ 1)                                             | at least one per-layer governance doc                                   |
 | `src/*/AssemblyMarker.cs` (≥ 1)                                     | at least one NetArchTest assembly anchor                                |
 | `tests/*.Tests.Unit/Architecture/*ArchitectureTests.cs` (≥ 1)       | at least one NetArchTest exists                                         |
+| `BYPASS-POLICY.md`                                                  | gate-bypass discipline doc copied from `templates/common/`              |
+| `BRANCH-PROTECTION.md`                                              | branch-protection requirements doc copied from `templates/common/`      |
+| `.githooks/pre-commit`                                              | gate-system local pre-commit hook                                       |
+| `.githooks/pre-push`                                                | gate-system local pre-push hook                                         |
+| `.githooks/commit-msg`                                              | gate-system commit-msg hook (enforces `Verified:` trailer when needed)  |
+| `scripts/bootstrap.sh`                                              | reproducible bootstrap (`./scripts/bootstrap.sh` from scaffold step)    |
+| `.tools/manifest.toml`                                              | pinned tool versions for `tools-pin-check.yml`                          |
+| `.semgrep/packs/csharp.yaml`                                        | OWASP / C# rules pack copied from `templates/common/`                   |
+| `.semgrep/packs/owasp-top-ten.yaml`                                 | OWASP top-ten rules pack copied from `templates/common/`                |
+| `.github/workflows/gates-backstop.yml.disabled`                     | server-side backstop workflow (shipped disabled per scaffold step)      |
+| `.github/workflows/tools-pin-check.yml`                             | tool-pin drift workflow                                                 |
+| `.github/workflows/stryker-nightly.yml`                             | nightly Stryker mutation-test workflow                                  |
+| `.gates.toml`                                                       | gate config (thresholds, rule packs in play)                            |
+| `.gitconfig.gates`                                                  | per-repo git config that activates `.githooks/`                         |
+| `stryker-config.json`                                               | Stryker mutation-test config                                            |
+| `docs/rules-audit.md`                                               | rules-audit doc for the OWASP / gate-system layer                       |
 
 Concrete shell forms an LLM follows literally:
 
@@ -68,8 +84,33 @@ test -f .claude/hooks/pre-commit.sh                                           ||
 [ "$(find src -maxdepth 2 -name 'AGENTS.md' | wc -l)" -gt 0 ]                 || echo "MISSING: src/*/AGENTS.md"
 [ "$(find src -maxdepth 2 -name 'AssemblyMarker.cs' | wc -l)" -gt 0 ]         || echo "MISSING: src/*/AssemblyMarker.cs"
 [ "$(find tests -path '*/Architecture/*ArchitectureTests.cs' | wc -l)" -gt 0 ]|| echo "MISSING: tests/*.Tests.Unit/Architecture/*ArchitectureTests.cs"
-# … repeat for every row in the table above
+
+# Gate-system layer (Phase-1 "Gate system installation (always)" step in scaffold.md)
+test -f BYPASS-POLICY.md                                                      || echo "MISSING: BYPASS-POLICY.md"
+test -f BRANCH-PROTECTION.md                                                  || echo "MISSING: BRANCH-PROTECTION.md"
+test -f .githooks/pre-commit                                                  || echo "MISSING: .githooks/pre-commit"
+test -f .githooks/pre-push                                                    || echo "MISSING: .githooks/pre-push"
+test -f .githooks/commit-msg                                                  || echo "MISSING: .githooks/commit-msg"
+test -f scripts/bootstrap.sh                                                  || echo "MISSING: scripts/bootstrap.sh"
+test -f .tools/manifest.toml                                                  || echo "MISSING: .tools/manifest.toml"
+test -f .semgrep/packs/csharp.yaml                                            || echo "MISSING: .semgrep/packs/csharp.yaml"
+test -f .semgrep/packs/owasp-top-ten.yaml                                     || echo "MISSING: .semgrep/packs/owasp-top-ten.yaml"
+test -f .github/workflows/gates-backstop.yml.disabled                         || echo "MISSING: .github/workflows/gates-backstop.yml.disabled"
+test -f .github/workflows/tools-pin-check.yml                                 || echo "MISSING: .github/workflows/tools-pin-check.yml"
+test -f .github/workflows/stryker-nightly.yml                                 || echo "MISSING: .github/workflows/stryker-nightly.yml"
+test -f .gates.toml                                                           || echo "MISSING: .gates.toml"
+test -f .gitconfig.gates                                                      || echo "MISSING: .gitconfig.gates"
+test -f stryker-config.json                                                   || echo "MISSING: stryker-config.json"
+test -f docs/rules-audit.md                                                   || echo "MISSING: docs/rules-audit.md"
 ```
+
+The gate-system rows are not decorative. `BYPASS-POLICY.md` and the PR
+template reference the `Verified:` trailer enforced by
+`.githooks/commit-msg` and the `gates-backstop.yml` workflow. If those
+files are absent, the docs become Forensic Coding (instructions for
+plumbing that does not exist) and the Phase-2 scaffold ships with a
+broken governance story. This tripwire is the Sensor that prevents
+that drift.
 
 Run them all. Do not stop on first failure.
 
