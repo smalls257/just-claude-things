@@ -17,11 +17,12 @@ def parse(markdown: str) -> dict:
     contract_tasks = _extract_contract_tasks(markdown)
     route_tasks = _extract_route_tasks(markdown)
     test_tasks = _derive_test_tasks(entity_tasks, route_tasks)
+    migration_tasks = _extract_migration_tasks(markdown)
     return {
         "app_name_hint": app_name_hint,
         "slug": slug,
         "modules": modules,
-        "tasks": entity_tasks + row_tasks + enum_tasks + contract_tasks + route_tasks + test_tasks,
+        "tasks": entity_tasks + row_tasks + enum_tasks + contract_tasks + route_tasks + test_tasks + migration_tasks,
     }
 
 
@@ -288,6 +289,35 @@ def _extract_route_tasks(markdown: str) -> list[dict]:
                 "request": request_match.group(1) if request_match else None,
                 "response": response_match.group(1) if response_match else None,
             })
+    return tasks
+
+
+def _extract_migration_tasks(markdown: str) -> list[dict]:
+    tasks = []
+    for mod_match in re.finditer(
+        r'<module\s+name="([^"]+)">(.*?)</module>', markdown, re.DOTALL
+    ):
+        module = mod_match.group(1)
+        body = mod_match.group(2)
+        entities_match = re.search(r"<entities>(.*?)</entities>", body, re.DOTALL)
+        if not entities_match:
+            continue
+        tables = []
+        for h3 in re.finditer(
+            r"^###\s+(\S+).*?(?=^###\s|\Z)",
+            entities_match.group(1),
+            re.MULTILINE | re.DOTALL,
+        ):
+            entity = h3.group(1)
+            sql_fence = re.search(r"```sql\n(.*?)```", h3.group(0), re.DOTALL)
+            if not sql_fence:
+                continue
+            sql = sql_fence.group(1).rstrip()
+            if "CREATE TABLE" not in sql.upper():
+                continue
+            tables.append({"entity": entity, "sql": sql})
+        if tables:
+            tasks.append({"type": "migration", "module": module, "tables": tables})
     return tasks
 
 

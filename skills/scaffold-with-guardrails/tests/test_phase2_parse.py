@@ -207,3 +207,19 @@ def test_emits_unit_test_task_per_entity_and_integration_test_per_route():
         ("Library", "GET", "/books/{id}"),
         ("Library", "PUT", "/books/{id}/status"),
     }
+
+
+def test_emits_one_migration_task_per_module_with_table_sql():
+    result = phase2_parse.parse(FIXTURE.read_text())
+    migrations = [t for t in result["tasks"] if t["type"] == "migration"]
+    assert len(migrations) == 1
+
+    lib = migrations[0]
+    assert lib["module"] == "Library"
+    assert len(lib["tables"]) == 2
+    # Order should match emission order in the fixture (Author before Book).
+    assert lib["tables"][0]["entity"] == "Author"
+    assert lib["tables"][1]["entity"] == "Book"
+    # Each table carries its raw CREATE TABLE SQL — emit template will indent/include verbatim.
+    assert "CREATE TABLE authors" in lib["tables"][0]["sql"]
+    assert "CREATE TABLE books" in lib["tables"][1]["sql"]
