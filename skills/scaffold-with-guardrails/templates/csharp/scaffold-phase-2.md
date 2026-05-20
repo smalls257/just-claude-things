@@ -261,7 +261,9 @@ Idempotent — `mkdir -p` is a no-op on re-run. Re-running Phase-2
 
 ## Generation (task-driven)
 
-Parse the tech-design once and turn each work item into a Claude Code Task. The orchestrator dispatches one subagent per task; each subagent reads its own task description plus the matching template from `templates/csharp/phase2-task-templates/`. The 733-line skim-prose model is replaced by per-task ~50-line scope.
+**Dependencies.** `$SCAFFOLD` resolves to the skill root (set by the orchestrator at Phase-2 entry). Every script and template path below is relative to it. If any referenced script (`scripts/phase2-*.sh`, `scripts/phase2-parse.py`) or template (`templates/csharp/phase2-task-templates/*.md`) is absent, abort and report `missing scaffold artifact: <path>` — do not proceed with partial inputs.
+
+Parse the tech-design once and turn each work item into a Claude Code Task. The orchestrator dispatches one subagent per task; each subagent reads its own task description plus the matching template from `templates/csharp/phase2-task-templates/`. The 733-line skim-prose model is replaced by per-task ~50-line scope. Each task type is a separately-evolvable unit (Shield) with its own template; merging them back into one prose playbook recreates the God Method this redesign exists to retire.
 
 ### Step G1: Parse tech-design to JSON
 
@@ -294,14 +296,7 @@ While any task is `pending` or `in_progress`:
 
 ### Step G4: Post-build sensor
 
-After all tasks complete:
-
-```bash
-APP_NAME="{{APP_NAME}}" MODULES="{{SPACE_SEPARATED_MODULE_LIST}}" \
-  bash "$SCAFFOLD/scripts/phase2-postbuild.sh"
-```
-
-The script emits structured lines (`BUILD_STATUS=…`, `UNWIRED_MODULES_BEGIN`/`END`) the orchestrator parses into the summary report.
+See `## Post-build validation` below for the invocation, stdout contract, exit codes, and failure handling.
 
 ### Step G5: Summary report
 
