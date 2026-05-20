@@ -12,11 +12,13 @@ slug: library-demo
 
 ## Architecture overview
 
-Single module, `Library`, exposing minimal REST endpoints for tracking
+Single module, `Catalog`, exposing minimal REST endpoints for tracking
 books and authors. A user creates an author, then creates books linked
-to the author, then updates reading status as they read.
+to the author, then updates reading status as they read. The app is
+`Library`; `Catalog` is its one bounded feature module — the names
+must differ so the Phase-1 grill-time collision check passes.
 
-<module name="Library">
+<module name="Catalog">
 
 <entities>
 

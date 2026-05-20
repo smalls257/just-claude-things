@@ -13,9 +13,9 @@ FIXTURE = SKILL_ROOT / "tests" / "fixtures" / "library-demo.md"
 
 def test_parses_single_module():
     result = phase2_parse.parse(FIXTURE.read_text(encoding="utf-8"))
-    assert result["app_name_hint"] == "Library"
+    assert result["app_name_hint"] == "Catalog"
     assert result["slug"] == "library-demo"
-    assert result["modules"] == ["Library"]
+    assert result["modules"] == ["Catalog"]
 
 
 def test_emits_entity_tasks_with_columns():
@@ -24,7 +24,7 @@ def test_emits_entity_tasks_with_columns():
     assert len(entity_tasks) == 2
 
     author = next(t for t in entity_tasks if t["name"] == "Author")
-    assert author["module"] == "Library"
+    assert author["module"] == "Catalog"
     assert author["columns"] == [
         {"sql_name": "id",         "sql_type": "UUID",        "cs_type": "Guid",           "cs_name": "Id"},
         {"sql_name": "name",       "sql_type": "TEXT",        "cs_type": "string",         "cs_name": "Name"},
@@ -51,7 +51,7 @@ def test_emits_row_tasks_one_per_entity():
     assert len(row_tasks) == 2
 
     author_row = next(t for t in row_tasks if t["name"] == "Author")
-    assert author_row["module"] == "Library"
+    assert author_row["module"] == "Catalog"
     assert author_row["columns"][0]["cs_name"] == "Id"
     assert author_row["columns"][0]["cs_type"] == "Guid"
 
@@ -66,7 +66,7 @@ def test_emits_enum_task_explicit_wins_over_implicit():
 
     reading_status = enum_tasks[0]
     assert reading_status["name"] == "ReadingStatus"
-    assert reading_status["module"] == "Library"
+    assert reading_status["module"] == "Catalog"
     assert reading_status["values"] == ["unread", "reading", "completed", "abandoned"]
 
 
@@ -108,7 +108,7 @@ def test_emits_contract_tasks_from_bullet_lists():
     assert len(contracts) == 5
 
     create_author = next(t for t in contracts if t["name"] == "CreateAuthorRequest")
-    assert create_author["module"] == "Library"
+    assert create_author["module"] == "Catalog"
     assert create_author["fields"] == [{"cs_type": "string", "cs_name": "Name"}]
 
     author_response = next(t for t in contracts if t["name"] == "AuthorResponse")
@@ -158,7 +158,7 @@ def test_emits_route_tasks_from_routes_block():
     post = next(
         t for t in route_tasks if t["method"] == "POST" and t["path"] == "/authors"
     )
-    assert post["module"] == "Library"
+    assert post["module"] == "Catalog"
     assert post["request"] == "CreateAuthorRequest"
     assert post["response"] == "AuthorResponse"
 
@@ -171,7 +171,7 @@ def test_emits_route_tasks_from_routes_block():
     post_books = next(
         t for t in route_tasks if t["method"] == "POST" and t["path"] == "/books"
     )
-    assert post_books["module"] == "Library"
+    assert post_books["module"] == "Catalog"
     assert post_books["request"] == "CreateBookRequest"
     assert post_books["response"] == "BookResponse"
 
@@ -197,17 +197,17 @@ def test_emits_unit_test_task_per_entity_and_integration_test_per_route():
 
     assert len(unit_tests) == 2  # Author, Book
     assert {(t["module"], t["entity"]) for t in unit_tests} == {
-        ("Library", "Author"),
-        ("Library", "Book"),
+        ("Catalog", "Author"),
+        ("Catalog", "Book"),
     }
 
     assert len(integ_tests) == 5
     assert {(t["module"], t["method"], t["path"]) for t in integ_tests} == {
-        ("Library", "POST", "/authors"),
-        ("Library", "GET", "/authors/{id}"),
-        ("Library", "POST", "/books"),
-        ("Library", "GET", "/books/{id}"),
-        ("Library", "PUT", "/books/{id}/status"),
+        ("Catalog", "POST", "/authors"),
+        ("Catalog", "GET", "/authors/{id}"),
+        ("Catalog", "POST", "/books"),
+        ("Catalog", "GET", "/books/{id}"),
+        ("Catalog", "PUT", "/books/{id}/status"),
     }
 
 
@@ -217,7 +217,7 @@ def test_emits_one_migration_task_per_module_with_table_sql():
     assert len(migrations) == 1
 
     lib = migrations[0]
-    assert lib["module"] == "Library"
+    assert lib["module"] == "Catalog"
     assert len(lib["tables"]) == 2
     # Order should match emission order in the fixture (Author before Book).
     assert lib["tables"][0]["entity"] == "Author"
@@ -238,7 +238,7 @@ def test_cli_emits_valid_json_to_stdout(tmp_path):
     )
     parsed = json.loads(result.stdout)
     assert parsed["slug"] == "library-demo"
-    assert parsed["modules"] == ["Library"]
+    assert parsed["modules"] == ["Catalog"]
     # Sanity: all task types are present.
     types = {t["type"] for t in parsed["tasks"]}
     assert types == {"entity", "row", "enum", "contract", "route", "unit_test", "integration_test", "migration"}

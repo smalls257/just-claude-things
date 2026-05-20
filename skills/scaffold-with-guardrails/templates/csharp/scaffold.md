@@ -26,6 +26,55 @@ Skill grills briefly first, then runs these commands in the target repo.
 > share the same Application layer; deleting one is one project removal +
 > one csproj edit, not a refactor.
 
+## After grill: Module-vs-App collision check (mandatory)
+
+After the App name is collected and **before** any `dotnet new` runs, scan
+the tech-design at `docs/tech-design/<slug>.md` for `<module name="...">`
+tags. If any module name equals the App name (case-sensitive PascalCase
+match), **abort**:
+
+> *"Module name '<MODULE>' collides with App name '<APP>'. The App is the*
+> *bounded context; modules sit inside it and must not share its name.*
+> *Rename the module in the tech-design, then re-run."*
+
+Concrete shell — run after collecting `$APP` and the `$SLUG` from PREREQ-CHECK:
+
+```bash
+TECH_DESIGN="docs/tech-design/${SLUG}.md"
+if [ -f "$TECH_DESIGN" ]; then
+  grep -oE '<module name="[^"]+"' "$TECH_DESIGN" \
+    | sed -E 's/.*name="([^"]+)"/\1/' \
+    | while read -r MOD; do
+        if [ "$MOD" = "$APP" ]; then
+          echo "FAIL: Module name '$MOD' collides with App name '$APP'."
+          echo "      Rename the module in the tech-design — the App is"
+          echo "      the bounded context; modules sit inside it and"
+          echo "      must not share its name."
+          exit 1
+        fi
+      done
+fi
+```
+
+This is the **load-bearing** Phase-1 gate against C# namespace shadowing.
+When `{{MODULE}} == {{APP_NAME}}`, Phase-2 would emit
+`namespace Library.Domain.Library;` and per-test `using Library.Domain.Library;`
+inside `namespace Library.Tests.Unit.Library;` — C# enclosing-namespace-first
+resolution then fails CS0234 because the compiler resolves the unqualified
+`Library` to the current namespace, not root. The `global::` workaround
+exists (see the NetArchTest section below for an example) but every reader
+pays a **Leaky Narrative** tax mentally disambiguating the duplicated
+`Library` token at every call site. The fix lives in the tech-design
+(rename the module), not in the generator (auto-suffixing would be a
+**Silent Fallback** that hides the design smell).
+
+This check **must run in Phase-1** because Phase-1 already bakes the
+module name into AGENTS.md, NetArchTest per-layer tests, and per-module
+`.semgrep/` rules before Phase-2 sees the design. By the time Phase-2's
+own copy of this rule (`scaffold-phase-2.md` Step P3 rule 5) fires, the
+collision is already canonical in governance files. Defense in depth:
+both gates stand.
+
 ## Default stack choices
 
 | Concern | Choice | Why |
