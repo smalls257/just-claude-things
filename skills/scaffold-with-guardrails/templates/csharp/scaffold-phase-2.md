@@ -18,8 +18,106 @@ You only enter Phase-2 if all of the following are true:
 3. `../../PREREQ-CHECK.md` tag well-formedness validation passed.
 4. The user answered **Y** to the Phase-1 → Phase-2 handoff prompt.
 
-If any condition fails, Phase-2 is skipped. Phase-1 already completed; the
-scaffold is in a known-good state.
+The prose list above is the intent. The pre-flight gate below is the
+**tripwire** — without it, a subagent can silently scope-narrow Phase-1
+(skip `.semgrep/`, `AGENTS.md`, NetArchTest, hooks) and still enter
+Phase-2, producing a code-only scaffold with no governance. That is the
+Silent Fallback this skill exists to prevent.
+
+## Pre-flight gate (mandatory — do not skip)
+
+Before any pre-check, parsing, or generation work, run **every** check
+below from the repo root. **Collect all failures** and emit a single
+batched report. Abort on any failure.
+
+### Tripwire 1: Phase-1 artifact inventory
+
+Each path below must exist. For directories, "exist" means present and
+non-empty.
+
+| Path                                                                | What it proves                                                          |
+|---------------------------------------------------------------------|-------------------------------------------------------------------------|
+| `*.sln`                                                             | `dotnet new sln` ran                                                    |
+| `global.json`                                                       | SDK pin emitted                                                         |
+| `Directory.Build.props`                                             | TWAE / lockfile-mode / InvariantGlobalization wired                     |
+| `Directory.Build.targets`                                           | semgrep gate wired into `BeforeTargets="Build"`                         |
+| `Directory.Packages.props`                                          | central package management active                                       |
+| `coverlet.runsettings`                                              | coverage threshold (70%) configured                                     |
+| `.editorconfig`                                                     | shared IDE baseline                                                     |
+| `CLAUDE.md`                                                         | Six Principles + Violation Guide embedded                               |
+| `.semgrep/`                                                         | semgrep rule directory exists                                           |
+| `.semgrep/*/security.yaml`                                          | cross-cutting security rules                                            |
+| `.semgrep/*/quality.yaml`                                           | code-quality baseline                                                   |
+| `.semgrep/*/async.yaml`                                             | async correctness rules                                                 |
+| `.claude/settings.json`                                             | hook wiring                                                             |
+| `.claude/hooks/pre-commit.sh`                                       | pre-commit gate                                                         |
+| `.claude/hooks/pre-push.sh`                                         | pre-push gate                                                           |
+| `.github/PULL_REQUEST_TEMPLATE.md`                                  | PR-template gate checklist                                              |
+| `src/*/AGENTS.md` (≥ 1)                                             | at least one per-layer governance doc                                   |
+| `src/*/AssemblyMarker.cs` (≥ 1)                                     | at least one NetArchTest assembly anchor                                |
+| `tests/*.Tests.Unit/Architecture/*ArchitectureTests.cs` (≥ 1)       | at least one NetArchTest exists                                         |
+
+Concrete shell forms an LLM follows literally:
+
+```bash
+test -f *.sln                                                                 || echo "MISSING: *.sln"
+test -f Directory.Build.targets                                               || echo "MISSING: Directory.Build.targets"
+test -d .semgrep && [ "$(find .semgrep -name '*.yaml' | wc -l)" -gt 0 ]       || echo "MISSING: .semgrep/*.yaml"
+test -f .claude/settings.json                                                 || echo "MISSING: .claude/settings.json"
+test -f .claude/hooks/pre-commit.sh                                           || echo "MISSING: .claude/hooks/pre-commit.sh"
+[ "$(find src -maxdepth 2 -name 'AGENTS.md' | wc -l)" -gt 0 ]                 || echo "MISSING: src/*/AGENTS.md"
+[ "$(find src -maxdepth 2 -name 'AssemblyMarker.cs' | wc -l)" -gt 0 ]         || echo "MISSING: src/*/AssemblyMarker.cs"
+[ "$(find tests -path '*/Architecture/*ArchitectureTests.cs' | wc -l)" -gt 0 ]|| echo "MISSING: tests/*.Tests.Unit/Architecture/*ArchitectureTests.cs"
+# … repeat for every row in the table above
+```
+
+Run them all. Do not stop on first failure.
+
+### Tripwire 2: Build is green
+
+```bash
+dotnet build
+```
+
+Must exit `0` with zero errors. Warnings are allowed (the gate
+infrastructure may emit `NU1507` or similar from the dev's NuGet config).
+
+### Tripwire 3: Architecture tests pass
+
+```bash
+dotnet test --filter "FullyQualifiedName~Architecture"
+```
+
+Must exit `0`. All matched tests must Pass (Skipped is fine — but at
+least one test must execute, and zero may Fail).
+
+### Batched failure report
+
+If any tripwire fails, print exactly this shape and abort:
+
+```
+Phase-2 pre-flight FAILED. Phase-1 is incomplete or broken.
+
+Missing artifacts:
+  - <path>
+  - <path>
+
+Build/test failures:
+  - <verbatim summary of dotnet build / dotnet test output>
+
+Resolution:
+  - Re-run scaffold-with-guardrails Phase-1 to completion, OR
+  - Hand-author the missing artifacts before re-invoking Phase-2.
+
+Phase-2 will NOT proceed. The skill's guarantees (semgrep gates,
+NetArchTest, hooks, layered AGENTS.md guidance) depend on every artifact
+in tripwire 1 being present. A code-only scaffold with no governance is
+the failure mode this gate exists to prevent.
+```
+
+Then stop. No Phase-2 file generation, no pre-check, no parsing.
+
+If **all three** tripwires pass, proceed to `## Process overview`.
 
 ## Process overview
 
