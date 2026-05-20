@@ -10,7 +10,7 @@ FIXTURE = SKILL_ROOT / "tests" / "fixtures" / "library-demo.md"
 
 
 def test_parses_single_module():
-    result = phase2_parse.parse(FIXTURE.read_text())
+    result = phase2_parse.parse(FIXTURE.read_text(encoding="utf-8"))
     assert result["app_name_hint"] == "Library"
     assert result["slug"] == "library-demo"
     assert result["modules"] == ["Library"]
