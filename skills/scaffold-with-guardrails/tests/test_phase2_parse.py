@@ -96,3 +96,26 @@ CREATE TABLE orders (
     assert len(enum_tasks) == 1
     assert enum_tasks[0]["name"] == "OrderState"
     assert enum_tasks[0]["values"] == ["open", "paid", "shipped"]
+
+
+def test_emits_contract_tasks_from_bullet_lists():
+    # Fixture has 5 contracts in bullet form: "- fieldName: CsType — comment".
+    # Field cs_name is PascalCase (CreateAuthorRequest.name → Name; CreateBookRequest.authorId → AuthorId).
+    result = phase2_parse.parse(FIXTURE.read_text(encoding="utf-8"))
+    contracts = [t for t in result["tasks"] if t["type"] == "contract"]
+    assert len(contracts) == 5
+
+    create_author = next(t for t in contracts if t["name"] == "CreateAuthorRequest")
+    assert create_author["module"] == "Library"
+    assert create_author["fields"] == [{"cs_type": "string", "cs_name": "Name"}]
+
+    author_response = next(t for t in contracts if t["name"] == "AuthorResponse")
+    assert author_response["fields"] == [
+        {"cs_type": "Guid",   "cs_name": "Id"},
+        {"cs_type": "string", "cs_name": "Name"},
+    ]
+
+    # lowerCamelCase field name gets PascalCased correctly.
+    create_book = next(t for t in contracts if t["name"] == "CreateBookRequest")
+    assert {"cs_type": "Guid", "cs_name": "AuthorId"} in create_book["fields"]
+    assert {"cs_type": "int",  "cs_name": "PageCount"} in create_book["fields"]

@@ -14,11 +14,12 @@ def parse(markdown: str) -> dict:
     entity_tasks = _extract_entity_tasks(markdown)
     row_tasks = [_entity_to_row_task(e) for e in entity_tasks]
     enum_tasks = _extract_enum_tasks(markdown)
+    contract_tasks = _extract_contract_tasks(markdown)
     return {
         "app_name_hint": app_name_hint,
         "slug": slug,
         "modules": modules,
-        "tasks": entity_tasks + row_tasks + enum_tasks,
+        "tasks": entity_tasks + row_tasks + enum_tasks + contract_tasks,
     }
 
 
@@ -58,6 +59,13 @@ SQL_TO_CS = {
 
 def _pascal_case(snake: str) -> str:
     return "".join(part.capitalize() for part in snake.split("_"))
+
+
+def _pascal_case_camel(name: str) -> str:
+    # Handles lowerCamelCase ("authorId" → "AuthorId") AND snake_case ("page_count" → "PageCount").
+    if "_" in name:
+        return _pascal_case(name)
+    return name[:1].upper() + name[1:] if name else name
 
 
 def _split_top_level_commas(body: str) -> list[str]:
@@ -202,6 +210,41 @@ def _extract_enum_tasks(markdown: str) -> list[dict]:
         if (i["module"], frozenset(i["values"])) not in explicit_value_sets
     ]
     return explicit + deduped_implicit
+
+
+def _extract_contract_tasks(markdown: str) -> list[dict]:
+    tasks = []
+    for mod_match in re.finditer(
+        r'<module\s+name="([^"]+)">(.*?)</module>', markdown, re.DOTALL
+    ):
+        module = mod_match.group(1)
+        contracts_match = re.search(r"<contracts>(.*?)</contracts>", mod_match.group(2), re.DOTALL)
+        if not contracts_match:
+            continue
+        for h3 in re.finditer(
+            r"^###\s+(\S+).*?(?=^###\s|\Z)",
+            contracts_match.group(1),
+            re.MULTILINE | re.DOTALL,
+        ):
+            name = h3.group(1)
+            chunk = h3.group(0)
+            fields: list[dict] = []
+            # Bullet form: "- fieldName: CsType [— comment]" (also matches "* " marker).
+            for bullet in re.finditer(
+                r"^\s*[-*]\s+(\w+)\s*:\s*([A-Za-z0-9_<>]+)",
+                chunk,
+                re.MULTILINE,
+            ):
+                lower_name = bullet.group(1)
+                cs_type = bullet.group(2)
+                fields.append({
+                    "cs_type": cs_type,
+                    "cs_name": _pascal_case_camel(lower_name),
+                })
+            if not fields:
+                continue
+            tasks.append({"type": "contract", "module": module, "name": name, "fields": fields})
+    return tasks
 
 
 if __name__ == "__main__":
