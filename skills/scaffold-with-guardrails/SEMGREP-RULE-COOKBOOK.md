@@ -3,6 +3,22 @@
 Reusable rule patterns for `scaffold-with-guardrails`. Each rule ships with a
 `metadata.arch-rule` ID matching an `AGENTS.md` row and a matching NetArchTest test.
 
+> **Placeholder substitution — read before copying any rule.**
+>
+> Every `<App>`, `<APP-KEY>`, and `<MODULE>` token in this file is a
+> literal placeholder, NOT a semgrep metavariable. Semgrep treats them
+> as plain text — if you paste a rule containing `src/<App>.Api/...`
+> into your project without substitution, the `paths:` glob matches
+> nothing and the rule becomes a Silent Fallback (passes green, blocks
+> nothing). Before copying any rule:
+>
+> - Replace `<App>` with your app name (e.g., `Library`, `OrdersDemo`).
+> - Replace `<APP-KEY>` with your app's stable rule prefix (e.g., `LIB`, `ORDERS`).
+> - Replace `<MODULE>` with the module slug for module-scoped rules.
+>
+> Metavariables (`$X`, `$T`, `$CONN`, …) and ellipsis (`...`) ARE semgrep
+> syntax — leave those alone.
+
 ## No `catch (Exception) { return default; }` — Silent Fallback (C#)
 
 ```yaml
