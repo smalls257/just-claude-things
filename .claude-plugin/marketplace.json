@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "just-claude-things",
+  "description": "Project lifecycle skills: requirements-grill → tech-design-grill → scaffold-with-guardrails → to-issues",
+  "owner": {
+    "name": "Jason Smith",
+    "email": "REDACTED"
+  },
+  "plugins": [
+    {
+      "name": "just-claude-things",
+      "description": "scaffold-with-guardrails + tech-design-grill + requirements-grill + to-issues",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
