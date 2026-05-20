@@ -41,4 +41,5 @@ public class {{ENTITY}}Tests
 
 - file exists at the path above
 - contains the `Placeholder` test
+- file contains no unsubstituted `{{...}}` tokens
 - `dotnet build` from repo root exits 0

@@ -42,4 +42,5 @@ public class {{METHOD}}_{{PATH_SAFE}}_Tests
 ## Verification
 
 - file exists at the path above (class name and file name match)
+- file contains no unsubstituted `{{...}}` tokens
 - `dotnet build` from repo root exits 0

@@ -21,6 +21,8 @@
 ## Body template
 
 ```csharp
+using System;
+
 namespace {{APP_NAME}}.Domain.{{MODULE}};
 
 public sealed class {{NAME}}
@@ -40,8 +42,11 @@ public sealed class {{NAME}}
 `{{CREATE_PARAMS}}` = all non-PK, non-default columns as `(Type name, Type name)`, lowerCamelCase.
 Skip `id` and any column whose SQL definition includes `DEFAULT`.
 
+If `inputs.invariants` is empty, emit `// TODO: define invariants (none captured in tech-design).` — never emit a trailing-em-dash placeholder.
+
 ## Verification
 
 - file exists at `src/{{APP_NAME}}.Domain/{{MODULE}}/{{NAME}}.cs`
 - file begins with the three canonical header lines
+- file contains no unsubstituted `{{...}}` tokens
 - `dotnet build` from repo root exits 0

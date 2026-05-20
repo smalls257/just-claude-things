@@ -37,4 +37,5 @@ The Domain entity parses the enum.
 
 - file exists at `src/{{APP_NAME}}.Persistence/{{MODULE}}/{{NAME}}Row.cs`
 - record is `internal sealed` (never exposed past Persistence)
+- file contains no unsubstituted `{{...}}` tokens
 - `dotnet build` from repo root exits 0

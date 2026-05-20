@@ -36,4 +36,5 @@ PascalCase each value: `unread` → `Unread`, `in_progress` → `InProgress`.
 ## Verification
 
 - file exists at the path above
+- file contains no unsubstituted `{{...}}` tokens
 - `dotnet build` from repo root exits 0

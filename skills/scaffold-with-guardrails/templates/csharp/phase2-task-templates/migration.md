@@ -35,8 +35,11 @@ Default `{{MIGRATIONS_DIR}}` is `migrations/`; use `db/migrations/` if that dire
 {{end for}}
 ```
 
+If `inputs.tables` is empty, do NOT emit a header-only module block. Skip the migration task and surface the gap — a migration task with zero tables is a Paper Tiger.
+
 ## Verification
 
 - file exists at the migrations path
 - file begins with the canonical header on the first emission for the module list
 - each table's SQL appears verbatim from the tech-design fence
+- file contains no unsubstituted `{{...}}` tokens

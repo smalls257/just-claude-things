@@ -34,4 +34,5 @@ public sealed record {{NAME}}(
 
 - file exists at the path above
 - record is `public sealed` (DTO contract surface)
+- file contains no unsubstituted `{{...}}` tokens
 - `dotnet build` from repo root exits 0
