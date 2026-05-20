@@ -15,11 +15,12 @@ def parse(markdown: str) -> dict:
     row_tasks = [_entity_to_row_task(e) for e in entity_tasks]
     enum_tasks = _extract_enum_tasks(markdown)
     contract_tasks = _extract_contract_tasks(markdown)
+    route_tasks = _extract_route_tasks(markdown)
     return {
         "app_name_hint": app_name_hint,
         "slug": slug,
         "modules": modules,
-        "tasks": entity_tasks + row_tasks + enum_tasks + contract_tasks,
+        "tasks": entity_tasks + row_tasks + enum_tasks + contract_tasks + route_tasks,
     }
 
 
@@ -244,6 +245,36 @@ def _extract_contract_tasks(markdown: str) -> list[dict]:
             if not fields:
                 continue
             tasks.append({"type": "contract", "module": module, "name": name, "fields": fields})
+    return tasks
+
+
+def _extract_route_tasks(markdown: str) -> list[dict]:
+    tasks = []
+    for mod_match in re.finditer(
+        r'<module\s+name="([^"]+)">(.*?)</module>', markdown, re.DOTALL
+    ):
+        module = mod_match.group(1)
+        routes_match = re.search(r"<routes>(.*?)</routes>", mod_match.group(2), re.DOTALL)
+        if not routes_match:
+            continue
+        for h3 in re.finditer(
+            r"^###\s+(\S+)\s+(\S+).*?(?=^###\s|\Z)",
+            routes_match.group(1),
+            re.MULTILINE | re.DOTALL,
+        ):
+            method = h3.group(1)
+            path = h3.group(2)
+            chunk = h3.group(0)
+            request_match = re.search(r"Request:\s*`(\w+)`", chunk)
+            response_match = re.search(r"Response:\s*`(\w+)`", chunk)
+            tasks.append({
+                "type": "route",
+                "module": module,
+                "method": method,
+                "path": path,
+                "request": request_match.group(1) if request_match else None,
+                "response": response_match.group(1) if response_match else None,
+            })
     return tasks
 
 

@@ -146,3 +146,20 @@ slug: x
         {"cs_type": "int",  "cs_name": "PageCount"},
         {"cs_type": "Guid", "cs_name": "AuthorId"},
     ]
+
+
+def test_emits_route_tasks_from_routes_block():
+    result = phase2_parse.parse(FIXTURE.read_text(encoding="utf-8"))
+    route_tasks = [t for t in result["tasks"] if t["type"] == "route"]
+    assert len(route_tasks) == 2
+
+    post = next(t for t in route_tasks if t["method"] == "POST")
+    assert post["module"] == "Library"
+    assert post["path"] == "/authors"
+    assert post["request"] == "CreateAuthorRequest"
+    assert post["response"] == "AuthorResponse"
+
+    get = next(t for t in route_tasks if t["method"] == "GET")
+    assert get["path"] == "/authors/{id}"
+    assert get["request"] is None
+    assert get["response"] == "AuthorResponse"

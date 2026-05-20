@@ -131,4 +131,17 @@ unread → reading → completed | abandoned.
 
 </endpoints>
 
+<routes>
+
+### POST /authors
+
+Request: `CreateAuthorRequest`
+Response: `AuthorResponse`
+
+### GET /authors/{id}
+
+Response: `AuthorResponse`
+
+</routes>
+
 </module>
