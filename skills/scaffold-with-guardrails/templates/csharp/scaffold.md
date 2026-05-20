@@ -54,12 +54,15 @@ cp "$SCAFFOLD/templates/csharp/global.json" .
 cp "$SCAFFOLD/templates/csharp/Directory.Build.props" .
 cp "$SCAFFOLD/templates/csharp/Directory.Packages.props" .
 
-# .gitignore must land before `dotnet new` runs — every `dotnet new` and
-# every subsequent build/test creates bin/, obj/, TestResults/ under each
-# project. Without this copy, `git status` shows ~550 untracked artifacts
-# the moment the first build finishes. Source file is named `gitignore`
-# (no leading dot) in templates/ so it ships through filesystems / git
-# operations that strip dotfiles; rename on copy.
+# .gitignore must land before any `dotnet new` that creates bin/ or obj/
+# (i.e., `classlib`, `webapi`, `worker`, `xunit` — not `sln` or
+# `tool-manifest`, which only emit text files into the working directory).
+# Every classlib/webapi/worker/xunit project, plus every subsequent
+# build/test, creates bin/, obj/, TestResults/ under each project. Without
+# this copy, `git status` shows ~550 untracked artifacts the moment the
+# first build finishes. Source file is named `gitignore` (no leading dot)
+# in templates/ so it ships through filesystems / git operations that
+# strip dotfiles; rename on copy.
 cp "$SCAFFOLD/templates/csharp/gitignore" .gitignore
 
 dotnet new sln -n "$APP"
@@ -93,6 +96,31 @@ find . -name "*.csproj" | sort | xargs dotnet sln add
 # does not. Deleting the `.bak` files after keeps the working tree clean.
 find src tests -name '*.csproj' -exec sed -i.bak 's/ Version="[^"]*"//g' {} +
 find src tests -name '*.csproj.bak' -delete
+
+# Suppress CA1707 (identifier contains underscore) on test projects only.
+# Phase-2 emits integration test classes named `{METHOD}_{PATH_SAFE}_Tests`
+# (e.g., `GET_orders_byId_Tests`) — the underscores encode the HTTP route and
+# are the xUnit/.NET community convention for route-named tests; renaming
+# them to `MethodPathTests` destroys readability for no real benefit. We
+# suppress the warning at the test-project level, NOT globally — `src/`
+# stays strict (Directory.Build.props sets EnforceCodeStyleInBuild=true and
+# TreatWarningsAsErrors on `src/`, and that policy stands). The injection
+# adds <NoWarn>$(NoWarn);CA1707</NoWarn> into the existing <PropertyGroup>
+# of each Tests.* csproj. Same macOS-portable sed form as above.
+for TEST_CSPROJ in \
+  tests/"$APP".Tests.Unit/"$APP".Tests.Unit.csproj \
+  tests/"$APP".Tests.Integration/"$APP".Tests.Integration.csproj; do
+  # Inject `<NoWarn>` before the first `</PropertyGroup>` only. Using `sed`
+  # for cross-version newline handling (GNU `\n` vs. BSD literal-newline)
+  # is fragile; awk gives one portable form. `&& mv` keeps the write atomic.
+  awk '
+    !done && /<\/PropertyGroup>/ {
+      print "    <NoWarn>$(NoWarn);CA1707</NoWarn>"
+      done = 1
+    }
+    { print }
+  ' "$TEST_CSPROJ" > "$TEST_CSPROJ.tmp" && mv "$TEST_CSPROJ.tmp" "$TEST_CSPROJ"
+done
 
 # Dependency direction: Domain ← Application ← Infrastructure/Persistence
 dotnet add src/"$APP".Application/"$APP".Application.csproj \
@@ -658,34 +686,65 @@ public class DomainArchitectureTests
     private static readonly Assembly DomainAssembly =
         typeof(global::{{APP_NAME}}.Domain.AssemblyMarker).Assembly;
 
-    /// <summary>Enforces {{APP_KEY}}-DOMAIN-R001</summary>
+    private static readonly string[] ForbiddenDependencies =
+    {
+        "{{APP_NAME}}.Application",
+        "{{APP_NAME}}.Infrastructure",
+        "{{APP_NAME}}.Persistence",
+        "{{APP_NAME}}.Api",
+        "{{APP_NAME}}.Service",
+        "Dapper",
+        "Npgsql",
+        "System.Data",
+        "System.Data.Common",
+        "Microsoft.EntityFrameworkCore",
+        "MediatR",
+        "MassTransit",
+        "Microsoft.AspNetCore",
+        "Microsoft.Extensions.Hosting",
+    };
+
+    /// <summary>Enforces {{APP_KEY}}-DOMAIN-R001 (CIL-level)</summary>
     [Fact]
     public void Domain_HasNoInfrastructureReferences()
     {
         var result = Types.InAssembly(DomainAssembly)
             .ShouldNot()
-            .HaveDependencyOnAny(
-                "{{APP_NAME}}.Application",
-                "{{APP_NAME}}.Infrastructure",
-                "{{APP_NAME}}.Persistence",
-                "{{APP_NAME}}.Api",
-                "{{APP_NAME}}.Service",
-                "Dapper",
-                "Npgsql",
-                "System.Data",
-                "System.Data.Common",
-                "Microsoft.EntityFrameworkCore",
-                "MediatR",
-                "MassTransit",
-                "Microsoft.AspNetCore",
-                "Microsoft.Extensions.Hosting")
+            .HaveDependencyOnAny(ForbiddenDependencies)
             .GetResult();
 
         Assert.True(result.IsSuccessful,
             $"Domain has forbidden refs: {string.Join(", ", result.FailingTypeNames ?? [])}");
     }
+
+    /// <summary>Enforces {{APP_KEY}}-DOMAIN-R001 (reference-level)</summary>
+    [Fact]
+    public void Domain_HasNoInfrastructureProjectReferences()
+    {
+        var forbidden = new HashSet<string>(ForbiddenDependencies, StringComparer.Ordinal);
+        foreach (var refName in DomainAssembly.GetReferencedAssemblies())
+        {
+            var name = refName.Name ?? string.Empty;
+            Assert.False(forbidden.Contains(name),
+                $"Domain has forbidden project reference: {name}");
+        }
+    }
 }
 ```
+
+**Two tests, two failure modes.** `Domain_HasNoInfrastructureReferences` is
+the CIL-level check: it scans every type in the Domain assembly and fails
+if any of them *uses* a forbidden API (calls a method, names a type, etc.).
+`Domain_HasNoInfrastructureProjectReferences` is the reference-level check:
+it walks `DomainAssembly.GetReferencedAssemblies()` and fails if the csproj
+declares a forbidden `<ProjectReference>` even when no code uses the
+referenced types yet. Without the second test the first is a **Paper
+Tiger** on an empty scaffold — adding `<ProjectReference Include="...App.
+Persistence..." />` to `App.Domain.csproj` leaves zero CIL-level usages
+until someone writes the first `new SomePersistenceType()`, and the
+CIL-only test stays green during that window. Defense in depth:
+`.semgrep/.../{layer}.yaml` catches the csproj edit at lint time; this
+second test catches it at build time. Both must pass.
 
 **`global::` prefix on `typeof(...)`** — the test class lives in `{{APP_NAME}}.Tests.Unit.Architecture`. Without `global::`, the C# compiler resolves `{{APP_NAME}}.Domain` against the enclosing namespace first, looking for `{{APP_NAME}}.Tests.Unit.Architecture.{{APP_NAME}}.Domain` and failing with CS0234. The `global::` prefix forces root-namespace resolution.
 

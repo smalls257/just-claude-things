@@ -248,6 +248,37 @@ Run each rule. Collect all failures before prompting:
 4. **Module name PascalCase.** `<module name="orders">` (lowercase) fails.
    - Failure: `"Module name '{name}' must be PascalCase"`
 
+5. **Module name must not equal App name.** For every `<module name="X">`,
+   compare `X` to the App name (the same value used elsewhere as
+   `{{APP_NAME}}` — resolve from the `<App>.sln` filename in the repo root,
+   or from the scaffold-context App value if Phase-1 just ran). If any
+   module name equals the App name (case-sensitive PascalCase match), fail:
+   - Failure: `"Module name '{name}' collides with App name '{app}'. Rename the module in the tech-design — the App is the bounded context; modules sit inside it and must not share its name."`
+
+   Concrete shell:
+   ```bash
+   APP=$(ls *.sln 2>/dev/null | head -1 | sed 's/\.sln$//')
+   # Extract every module name from the tech-design (one per line).
+   grep -oE '<module name="[^"]+"' "docs/tech-design/${SLUG}.md" \
+     | sed -E 's/.*name="([^"]+)"/\1/' \
+     | while read -r MOD; do
+         if [ "$MOD" = "$APP" ]; then
+           echo "FAIL: Module name '$MOD' collides with App name '$APP'. Rename the module in the tech-design."
+         fi
+       done
+   ```
+
+   This prevents **namespace shadowing** — without the check, Phase-2
+   emits `namespace {{APP_NAME}}.Domain.{{MODULE}};` where `{{MODULE}} ==
+   {{APP_NAME}}`, producing tokens like `namespace Library.Domain.Library;`
+   and `using Library.Domain.Library;` inside `Library.Api.Library.Contracts`.
+   C# enclosing-namespace-first resolution can compile this in small trees
+   but breaks confusingly when a sibling type also called `Library` enters
+   scope, and every reader pays a **Leaky Narrative** tax mentally
+   disambiguating the duplicated `Library` token at every call site. The
+   fix lives in the tech-design (rename the module), not in the generator
+   (auto-suffixing would be a Silent Fallback that hides the design smell).
+
 ### Step P4: Gap report + user prompt
 
 If any **structural** failures (from P1) or **cross-reference** failures (from P3) collected:
