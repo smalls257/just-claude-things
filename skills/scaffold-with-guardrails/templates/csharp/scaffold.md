@@ -194,7 +194,16 @@ After `dotnet new`, the skill creates these files (generators don't produce them
 - `.github/workflows/openapi-diff.yml.disabled` — OpenAPI contract diff stub via oasdiff; copied from `templates/csharp/github-workflows/openapi-diff.yml.disabled` (rename to `.yml` after wiring spec gen)
 - `.claude/settings.json` — hook wiring
 - `.claude/hooks/{pre-commit,pre-push,stop-neg-audit}.sh` — copied from this skill (`chmod +x`)
-- `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference). **Includes `<App>.Client` when scaffolded** so the architecture tests can assert nothing in the client SDK references Infrastructure / Persistence
+- `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference). **Must be `public`** so the test assembly can name `typeof(<App>.<Layer>.AssemblyMarker)` without `CS0122` (the type is referenced from `<App>.Tests.Unit/Architecture/*.cs` and an `internal` marker is inaccessible across assemblies). Canonical body — emit verbatim, no fields, no methods:
+
+  ```csharp
+  namespace {{APP_NAME}}.{{LAYER}};
+
+  /// <summary>NetArchTest anchor — gives Architecture tests an Assembly reference. Do not add members.</summary>
+  public sealed class AssemblyMarker { }
+  ```
+
+  **Includes `<App>.Client` when scaffolded** so the architecture tests can assert nothing in the client SDK references Infrastructure / Persistence.
 - `src/<App>.{Api,Service}/Configuration/*Options.cs` — typed config + `ValidateOnStart` triad (one file per options group)
 - `src/<App>.{Api,Service}/appsettings.Development.json` — populated with the matching section for every options class so `ValidateOnStart` does not fail on first `dotnet run` (see "Companion settings" under the Options validation pattern)
 
