@@ -531,15 +531,34 @@ chmod +x .githooks/pre-commit.d/* .githooks/pre-push.d/* .githooks/commit-msg.d/
 chmod +x scripts/*.sh
 
 # Stryker.NET tool install.
-# Pin `--source https://api.nuget.org/v3/index.json` so the install
-# bypasses any private feeds configured in the user's global NuGet.Config
-# (Azure DevOps `msft_consumption`, GitHub Packages, internal proxies,
-# etc.). `dotnet tool install` treats 401 from any configured feed as
-# fatal — even if nuget.org has the package — so a stale corp-feed token
-# would otherwise wedge the scaffold. dotnet-stryker is published only on
-# nuget.org; there is no reason to consult private feeds for it.
+#
+# Write a project-scoped NuGet.Config at the repo root BEFORE running
+# `dotnet tool install`. `<clear/>` drops every source inherited from
+# the user's global NuGet.Config; `<add ... nuget.org />` is then the
+# only feed any `dotnet` command run from this directory will consult.
+#
+# Do NOT rely on `dotnet tool install --source ...` for this. The
+# `--source` flag does not actually prevent feed enumeration: NuGet
+# still walks every source in the effective config, and if any of them
+# (e.g. an Azure DevOps `msft_consumption` upstream feed) returns 401
+# before nuget.org is reached, the install fails — even though
+# nuget.org has the package. That is a Silent Fallback: the flag looks
+# like it constrains the install, but it does not. A project-scoped
+# NuGet.Config with `<clear/>` is the canonical, authoritative override.
+# dotnet-stryker is published only on nuget.org; there is no reason to
+# consult any private feed for it.
+cat > NuGet.Config <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+  </packageSources>
+</configuration>
+EOF
+
 dotnet new tool-manifest 2>/dev/null || true
-dotnet tool install dotnet-stryker --source https://api.nuget.org/v3/index.json
+dotnet tool install dotnet-stryker
 
 # Run bootstrap to wire hooks + fetch tools
 ./scripts/bootstrap.sh
