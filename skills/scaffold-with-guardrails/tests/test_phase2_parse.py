@@ -29,3 +29,15 @@ def test_emits_entity_tasks_with_columns():
         {"sql_name": "created_at", "sql_type": "TIMESTAMPTZ", "cs_type": "DateTimeOffset", "cs_name": "CreatedAt"},
     ]
     assert author["invariants"] == "name is non-empty."
+
+
+def test_entity_columns_preserve_check_in_constraints():
+    # Locks the _split_top_level_commas contract: Book.status's CHECK IN
+    # constraint has commas inside parens that must NOT split the column list.
+    # If this regresses, the column becomes orphan fragments and the parser
+    # either crashes or silently produces malformed columns.
+    result = phase2_parse.parse(FIXTURE.read_text(encoding="utf-8"))
+    book = next(t for t in result["tasks"] if t["type"] == "entity" and t["name"] == "Book")
+    status_col = next(c for c in book["columns"] if c["sql_name"] == "status")
+    assert status_col["sql_type"] == "TEXT"
+    assert status_col["cs_type"] == "string"
