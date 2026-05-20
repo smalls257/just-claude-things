@@ -1,5 +1,7 @@
-from pathlib import Path
+import json
+import subprocess
 import sys
+from pathlib import Path
 
 SKILL_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
@@ -223,3 +225,30 @@ def test_emits_one_migration_task_per_module_with_table_sql():
     # Each table carries its raw CREATE TABLE SQL — emit template will indent/include verbatim.
     assert "CREATE TABLE authors" in lib["tables"][0]["sql"]
     assert "CREATE TABLE books" in lib["tables"][1]["sql"]
+
+
+def test_cli_emits_valid_json_to_stdout(tmp_path):
+    fixture_copy = tmp_path / "library-demo.md"
+    fixture_copy.write_text(FIXTURE.read_text())
+    result = subprocess.run(
+        [sys.executable, str(SKILL_ROOT / "scripts" / "phase2-parse.py"), str(fixture_copy)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    parsed = json.loads(result.stdout)
+    assert parsed["slug"] == "library-demo"
+    assert parsed["modules"] == ["Library"]
+    # Sanity: all task types are present.
+    types = {t["type"] for t in parsed["tasks"]}
+    assert types == {"entity", "row", "enum", "contract", "route", "unit_test", "integration_test", "migration"}
+
+
+def test_cli_errors_on_missing_argument():
+    result = subprocess.run(
+        [sys.executable, str(SKILL_ROOT / "scripts" / "phase2-parse.py")],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "usage:" in result.stderr
