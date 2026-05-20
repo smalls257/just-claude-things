@@ -74,96 +74,28 @@ non-empty.
 | `NuGet.Config`                                                      | project-scoped feed override (`<clear/>` + nuget.org); prevents inherited Azure DevOps feed from wedging `dotnet tool install` with 401 (Silent Fallback the scaffold step exists to avoid) |
 | `docs/rules-audit.md`                                               | rules-audit doc for the OWASP / gate-system layer                       |
 
-Concrete shell forms an LLM follows literally:
+### Running the gate
+
+All three tripwires live in a single harness script. Run it from the
+target repo root:
 
 ```bash
-# `test -f *.sln` is a Silent Fallback: shell expands the glob before `test` sees it, so
-# zero matches leaves the literal `*.sln` (false-success-by-accident) and multiple matches
-# pass extra args to `test -f` (syntax error). `ls` collapses all three cases honestly.
-ls *.sln >/dev/null 2>&1                                                      || echo "MISSING: *.sln"
-test -f Directory.Build.targets                                               || echo "MISSING: Directory.Build.targets"
-test -d .semgrep && [ "$(find .semgrep -name '*.yaml' | wc -l)" -gt 0 ]       || echo "MISSING: .semgrep/*.yaml"
-test -f .claude/settings.json                                                 || echo "MISSING: .claude/settings.json"
-test -f .claude/hooks/pre-commit.sh                                           || echo "MISSING: .claude/hooks/pre-commit.sh"
-[ "$(find src -maxdepth 2 -name 'AGENTS.md' | wc -l)" -gt 0 ]                 || echo "MISSING: src/*/AGENTS.md"
-[ "$(find src -maxdepth 2 -name 'AssemblyMarker.cs' | wc -l)" -gt 0 ]         || echo "MISSING: src/*/AssemblyMarker.cs"
-[ "$(find tests -path '*/Architecture/*ArchitectureTests.cs' | wc -l)" -gt 0 ]|| echo "MISSING: tests/*.Tests.Unit/Architecture/*ArchitectureTests.cs"
-
-# Gate-system layer (Phase-1 "Gate system installation (always)" step in scaffold.md)
-test -f BYPASS-POLICY.md                                                      || echo "MISSING: BYPASS-POLICY.md"
-test -f BRANCH-PROTECTION.md                                                  || echo "MISSING: BRANCH-PROTECTION.md"
-test -f .githooks/pre-commit                                                  || echo "MISSING: .githooks/pre-commit"
-test -f .githooks/pre-push                                                    || echo "MISSING: .githooks/pre-push"
-test -f .githooks/commit-msg                                                  || echo "MISSING: .githooks/commit-msg"
-test -f scripts/bootstrap.sh                                                  || echo "MISSING: scripts/bootstrap.sh"
-test -f .tools/manifest.toml                                                  || echo "MISSING: .tools/manifest.toml"
-test -f .semgrep/packs/csharp.yaml                                            || echo "MISSING: .semgrep/packs/csharp.yaml"
-test -f .semgrep/packs/owasp-top-ten.yaml                                     || echo "MISSING: .semgrep/packs/owasp-top-ten.yaml"
-test -f .github/workflows/gates-backstop.yml.disabled                         || echo "MISSING: .github/workflows/gates-backstop.yml.disabled"
-test -f .github/workflows/tools-pin-check.yml                                 || echo "MISSING: .github/workflows/tools-pin-check.yml"
-test -f .github/workflows/stryker-nightly.yml                                 || echo "MISSING: .github/workflows/stryker-nightly.yml"
-test -f .gates.toml                                                           || echo "MISSING: .gates.toml"
-test -f .gitconfig.gates                                                      || echo "MISSING: .gitconfig.gates"
-test -f stryker-config.json                                                   || echo "MISSING: stryker-config.json"
-test -f NuGet.Config                                                          || echo "MISSING: NuGet.Config"
-test -f docs/rules-audit.md                                                   || echo "MISSING: docs/rules-audit.md"
+bash "$SCAFFOLD/scripts/phase2-preflight.sh"
 ```
 
-The gate-system rows are not decorative. `BYPASS-POLICY.md` and the PR
-template reference the `Verified:` trailer enforced by
-`.githooks/commit-msg` and the `gates-backstop.yml` workflow. If those
-files are absent, the docs become Forensic Coding (instructions for
-plumbing that does not exist) and the Phase-2 scaffold ships with a
-broken governance story. This tripwire is the Sensor that prevents
-that drift.
+- Exit `0` → all 3 tripwires passed; proceed to `## Process overview`.
+- Exit `1` → batched failure report printed to stderr (missing artifacts list + verbatim `dotnet build` / `dotnet test` output if either failed). Abort Phase-2. Do not pre-check, do not parse, do not generate. Fix the root cause (re-run Phase-1 to completion or hand-author the missing artifacts) and re-run.
 
-Run them all. Do not stop on first failure.
+The harness collects every failure before exiting — Sensor over fail-fast,
+because the dev needs the full picture in one shot. Build/test failures
+are reported with verbatim `dotnet` output indented under their heading.
 
-### Tripwire 2: Build is green
-
-```bash
-dotnet build
-```
-
-Must exit `0` with zero errors. Warnings are allowed (the gate
-infrastructure may emit `NU1507` or similar from the dev's NuGet config).
-
-### Tripwire 3: Architecture tests pass
-
-```bash
-dotnet test --filter "FullyQualifiedName~Architecture"
-```
-
-Must exit `0`. All matched tests must Pass (Skipped is fine — but at
-least one test must execute, and zero may Fail).
-
-### Batched failure report
-
-If any tripwire fails, print exactly this shape and abort:
-
-```
-Phase-2 pre-flight FAILED. Phase-1 is incomplete or broken.
-
-Missing artifacts:
-  - <path>
-  - <path>
-
-Build/test failures:
-  - <verbatim summary of dotnet build / dotnet test output>
-
-Resolution:
-  - Re-run scaffold-with-guardrails Phase-1 to completion, OR
-  - Hand-author the missing artifacts before re-invoking Phase-2.
-
-Phase-2 will NOT proceed. The skill's guarantees (semgrep gates,
-NetArchTest, hooks, layered AGENTS.md guidance) depend on every artifact
-in tripwire 1 being present. A code-only scaffold with no governance is
-the failure mode this gate exists to prevent.
-```
-
-Then stop. No Phase-2 file generation, no pre-check, no parsing.
-
-If **all three** tripwires pass, proceed to `## Process overview`.
+The gate-system rows in the inventory above are not decorative.
+`BYPASS-POLICY.md` and the PR template reference the `Verified:` trailer
+enforced by `.githooks/commit-msg` and the `gates-backstop.yml` workflow.
+If those files are absent, the docs become Forensic Coding (instructions
+for plumbing that does not exist) and the Phase-2 scaffold ships with a
+broken governance story. This gate is the Sensor that prevents that drift.
 
 ## Process overview
 
@@ -764,77 +696,22 @@ The most common causes are:
 
 ## Summary report
 
-After successful build (or after failed-build report), print a summary:
-
-Sections below labelled with `-- OR --` show alternative renderings — emit exactly one form per section based on the run's actual state.
+After successful build (or after failed-build report), emit the summary
+using the canonical template at:
 
 ```
-=========================================
-Phase-2 Domain Populate — Summary
-=========================================
-
-Tech-design: docs/tech-design/{{SLUG}}.md
-Modules processed: Orders, Customers
-
-Counts: {{N_ENTITIES}} entities, {{N_ENUMS}} enums, {{N_CONTRACTS}} contracts, {{N_ROUTES}} routes, {{N_FILES}} files written ({{N_OVERWRITTEN}} overwritten)
-
-Migration output folder: migrations/   (or db/migrations/ if it existed)
-
-Files generated (NEW):
-  src/{{APP_NAME}}.Domain/Orders/Order.cs
-  src/{{APP_NAME}}.Domain/Orders/OrderStatus.cs
-  src/{{APP_NAME}}.Persistence/Orders/OrderRow.cs
-  src/{{APP_NAME}}.Api/Orders/Contracts/CreateOrderRequest.cs
-  src/{{APP_NAME}}.Api/Orders/Contracts/OrderResponse.cs
-  src/{{APP_NAME}}.Api/Orders/OrdersEndpoints.cs
-  tests/{{APP_NAME}}.Tests.Unit/Orders/OrderTests.cs
-  tests/{{APP_NAME}}.Tests.Integration/Orders/POST_orders_Tests.cs
-  tests/{{APP_NAME}}.Tests.Integration/Orders/GET_orders_byId_Tests.cs
-  migrations/0001_initial_schema.sql
-
-Documentation-only entities (skipped — comment-only SQL fence):
-  (none)
-  -- OR --
-  Shared.Money
-
-Files OVERWRITTEN (had prior contents):
-  (none)
-  -- OR --
-  src/{{APP_NAME}}.Domain/Orders/Order.cs
-  ... (lists files that existed)
-
-Pre-check substitutions:
-  (none)
-  -- OR --
-  Endpoint Orders.POST /orders Request: LineItem → object (user picked proceed)
-
-FK forward-references in migration SQL:
-  (none)
-  -- OR --
-  orders.customer_id REFERENCES customers (Customers module emitted after Orders)
-
-Build status: SUCCEEDED
-  -- OR --
-Build status: FAILED — see errors above
-
-Modules not wired in Program.cs:
-  (none — all Map<Module>Endpoints calls present)
-  -- OR --
-  Orders   <-- add `app.MapOrdersEndpoints();` to Program.cs (else routes 404)
-
-Next steps:
-  - Fill in `// TODO` blocks in Domain entities (invariants, factories)
-  - Replace `throw new NotImplementedException()` in endpoint handlers
-  - Replace `Placeholder()` test methods with real cases
-  - Wire `app.MapOrdersEndpoints();` into Program.cs
-  - Apply migration: `psql ... < migrations/0001_initial_schema.sql`
-  - If any FK forward-references were reported above, verify table
-    emission order satisfies your CREATE constraints before applying
-
-=========================================
+$SCAFFOLD/templates/csharp/phase2-summary-report.txt
 ```
 
-The summary is the last thing Phase-2 emits before exiting.
+The template uses two placeholder shapes:
+
+- `{{NAME}}` — single value, always substituted (e.g., `{{SLUG}}`, `{{N_ENTITIES}}`, `{{BUILD_STATUS}}`).
+- `{{NAME | "default string"}}` — list value; emit one indented line per
+  entry, or print the default string verbatim when the list is empty.
+
+The legend at the bottom of the template file shows worked examples for
+each list section. The summary is the last thing Phase-2 emits before
+exiting.
 
 ## File header template
 
