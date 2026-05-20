@@ -26,6 +26,7 @@ test -f scripts/bootstrap.sh                              || report_missing scri
 test -f .gitconfig.gates                                  || report_missing .gitconfig.gates
 test -f .gates.toml                                       || report_missing .gates.toml
 test -f .tools/manifest.toml                              || report_missing .tools/manifest.toml
+test -f .tools/.gitignore                                 || report_missing .tools/.gitignore
 
 # Semgrep packs (csharp verbatim; owasp filtered to C#-applicable subset)
 test -f .semgrep/packs/csharp.yaml                        || report_missing .semgrep/packs/csharp.yaml

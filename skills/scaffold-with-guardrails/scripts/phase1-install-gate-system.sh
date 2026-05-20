@@ -128,9 +128,18 @@ cat > NuGet.Config <<'EOF'
 </configuration>
 EOF
 
-log "step 7: dotnet new tool-manifest (idempotent) + dotnet tool install dotnet-stryker"
+log "step 7: dotnet new tool-manifest (idempotent) + dotnet tool install dotnet-stryker (idempotent)"
 dotnet new tool-manifest 2>/dev/null || true
-dotnet tool install dotnet-stryker
+# `dotnet tool install` errors with "Tool 'dotnet-stryker' is already installed"
+# on re-run, which would abort under `set -e`. The verifier instructs humans to
+# re-run this script on failure, so we must survive a second run cleanly.
+# Pattern: check the manifest first, install only if absent. `dotnet tool list`
+# (without --global) reads `.config/dotnet-tools.json`.
+if dotnet tool list 2>/dev/null | awk 'NR>2 {print $1}' | grep -qx 'dotnet-stryker'; then
+  log "  dotnet-stryker already installed; skipping"
+else
+  dotnet tool install dotnet-stryker
+fi
 
 # Run bootstrap to wire hooks + fetch tools
 log "step 8: ./scripts/bootstrap.sh (wire hooks + fetch tools)"
