@@ -229,7 +229,7 @@ def test_emits_one_migration_task_per_module_with_table_sql():
 
 def test_cli_emits_valid_json_to_stdout(tmp_path):
     fixture_copy = tmp_path / "library-demo.md"
-    fixture_copy.write_text(FIXTURE.read_text())
+    fixture_copy.write_text(FIXTURE.read_text(encoding="utf-8"))
     result = subprocess.run(
         [sys.executable, str(SKILL_ROOT / "scripts" / "phase2-parse.py"), str(fixture_copy)],
         capture_output=True,
@@ -244,7 +244,7 @@ def test_cli_emits_valid_json_to_stdout(tmp_path):
     assert types == {"entity", "row", "enum", "contract", "route", "unit_test", "integration_test", "migration"}
 
 
-def test_cli_errors_on_missing_argument():
+def test_cli_exits_2_with_usage_on_missing_argument():
     result = subprocess.run(
         [sys.executable, str(SKILL_ROOT / "scripts" / "phase2-parse.py")],
         capture_output=True,
@@ -252,3 +252,19 @@ def test_cli_errors_on_missing_argument():
     )
     assert result.returncode == 2
     assert "usage:" in result.stderr
+    # Usage message must name the script so the user knows what they invoked wrong.
+    assert "phase2-parse" in result.stderr
+
+
+def test_cli_exits_nonzero_when_file_missing(tmp_path):
+    missing = tmp_path / "no-such-file.md"
+    result = subprocess.run(
+        [sys.executable, str(SKILL_ROOT / "scripts" / "phase2-parse.py"), str(missing)],
+        capture_output=True,
+        text=True,
+    )
+    # Current behavior: FileNotFoundError traceback → exit 1. Lock non-zero,
+    # not the specific code, so a future graceful-error refactor stays free.
+    assert result.returncode != 0
+    # User must see which file we couldn't find.
+    assert str(missing) in result.stderr
