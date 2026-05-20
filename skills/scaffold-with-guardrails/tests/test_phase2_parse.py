@@ -186,3 +186,24 @@ def test_emits_route_tasks_from_routes_block():
     )
     assert put_status["request"] == "UpdateStatusRequest"
     assert put_status["response"] == "BookResponse"
+
+
+def test_emits_unit_test_task_per_entity_and_integration_test_per_route():
+    result = phase2_parse.parse(FIXTURE.read_text(encoding="utf-8"))
+    unit_tests = [t for t in result["tasks"] if t["type"] == "unit_test"]
+    integ_tests = [t for t in result["tasks"] if t["type"] == "integration_test"]
+
+    assert len(unit_tests) == 2  # Author, Book
+    assert {(t["module"], t["entity"]) for t in unit_tests} == {
+        ("Library", "Author"),
+        ("Library", "Book"),
+    }
+
+    assert len(integ_tests) == 5
+    assert {(t["module"], t["method"], t["path"]) for t in integ_tests} == {
+        ("Library", "POST", "/authors"),
+        ("Library", "GET", "/authors/{id}"),
+        ("Library", "POST", "/books"),
+        ("Library", "GET", "/books/{id}"),
+        ("Library", "PUT", "/books/{id}/status"),
+    }

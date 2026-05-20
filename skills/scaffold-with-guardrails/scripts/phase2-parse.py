@@ -16,11 +16,12 @@ def parse(markdown: str) -> dict:
     enum_tasks = _extract_enum_tasks(markdown)
     contract_tasks = _extract_contract_tasks(markdown)
     route_tasks = _extract_route_tasks(markdown)
+    test_tasks = _derive_test_tasks(entity_tasks, route_tasks)
     return {
         "app_name_hint": app_name_hint,
         "slug": slug,
         "modules": modules,
-        "tasks": entity_tasks + row_tasks + enum_tasks + contract_tasks + route_tasks,
+        "tasks": entity_tasks + row_tasks + enum_tasks + contract_tasks + route_tasks + test_tasks,
     }
 
 
@@ -31,6 +32,18 @@ def _entity_to_row_task(entity_task: dict) -> dict:
         "name": entity_task["name"],
         "columns": list(entity_task["columns"]),
     }
+
+
+def _derive_test_tasks(entity_tasks: list[dict], route_tasks: list[dict]) -> list[dict]:
+    unit_tests = [
+        {"type": "unit_test", "module": e["module"], "entity": e["name"]}
+        for e in entity_tasks
+    ]
+    integ_tests = [
+        {"type": "integration_test", "module": r["module"], "method": r["method"], "path": r["path"]}
+        for r in route_tasks
+    ]
+    return unit_tests + integ_tests
 
 
 def _extract_frontmatter_slug(markdown: str) -> str:
