@@ -102,9 +102,10 @@ broken governance story. This gate is the Sensor that prevents that drift.
 ```
 1. Pre-check — parse all <module> blocks, validate cross-references
 2. (If gaps) Gap report → user prompts: fix and re-run, or proceed with stubs
-3. Per module, per artifact type, emit files
-4. Emit single 0001_initial_schema.sql (path per output-folder rule)
-5. Run dotnet build
+3. Parse tech-design to JSON (phase2-parse.py) — one task per work item
+4. TaskCreate per task, dispatch implementer subagent per task,
+   reading the matching templates/csharp/phase2-task-templates/*.md
+5. Post-build sensor (phase2-postbuild.sh): dotnet build + endpoint-wiring check
 6. Summary report
 ```
 
