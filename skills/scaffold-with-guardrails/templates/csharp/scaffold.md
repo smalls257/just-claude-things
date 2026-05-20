@@ -175,6 +175,7 @@ After `dotnet new webapi`, also **strip the weather-forecast boilerplate** from 
 **Also delete the `dotnet new classlib` and `dotnet new xunit` placeholder files** — every classlib leaves a `Class1.cs` containing an empty `Class1`, and every xunit project leaves a `UnitTest1.cs` with a single `Test1` method. These are **Forensic Coding** waiting to happen: dead boilerplate forces every future reader (human or Phase-2 subagent) to figure out it is dead, and a subagent could mistake `Class1.cs` for intentional starting scaffolding and extend it. Delete them before the first commit so the tree only contains code that is alive on purpose. Concretely, after all `dotnet new classlib` / `dotnet new xunit` calls finish, run:
 
 ```bash
+# Run from the repo root (the directory containing src/ and tests/).
 # Strip dotnet new placeholder files (Forensic Coding prevention).
 # -maxdepth/-name/-delete is portable across BSD find (macOS) and GNU find (Linux).
 find src   -maxdepth 2 -name 'Class1.cs'    -delete
