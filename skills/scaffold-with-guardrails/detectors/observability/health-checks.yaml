@@ -1,0 +1,8 @@
+id: health-checks
+display: Health checks
+layer: observability
+priority: 70
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddHealthChecks\\s*\\(", "MapHealthChecks\\s*\\("]
+extract: enclosing-method-or-extension

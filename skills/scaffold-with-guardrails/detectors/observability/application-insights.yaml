@@ -1,0 +1,8 @@
+id: application-insights
+display: Application Insights telemetry
+layer: observability
+priority: 50
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddApplicationInsightsTelemetry\\s*\\("]
+extract: enclosing-method-or-extension
