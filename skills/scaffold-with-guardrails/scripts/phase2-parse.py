@@ -302,6 +302,13 @@ def _parse_create_table_columns(sql: str) -> list[dict]:
     if not body_match:
         return []
     body = body_match.group(1)
+    # First pass: collect column names that appear in a standalone
+    # PRIMARY KEY (col, col, ...) clause. These also count as PK columns
+    # for create-params purposes.
+    pk_from_clause = set()
+    for clause in re.finditer(r"PRIMARY KEY\s*\(([^)]+)\)", body, re.IGNORECASE):
+        for n in clause.group(1).split(","):
+            pk_from_clause.add(n.strip())
     columns = []
     for raw in _split_top_level_commas(body):
         line = raw.strip()
@@ -311,14 +318,48 @@ def _parse_create_table_columns(sql: str) -> list[dict]:
         sql_name = parts[0]
         sql_type = parts[1].upper().split("(")[0]
         cs_type = SQL_TO_CS.get(sql_type, "object")
+        # Bug E: track PK + DEFAULT for create-params skip rule.
+        rest_upper = line.upper()
+        is_pk = bool(
+            re.search(r"\bPRIMARY\s+KEY\b", rest_upper)
+        ) or sql_name in pk_from_clause
+        # Ignore DEFAULT inside a -- comment. Strip line-comments first.
+        no_comment = re.sub(r"--.*$", "", line).upper()
+        has_default = bool(re.search(r"\bDEFAULT\b", no_comment))
         columns.append({
             "sql_name": sql_name,
             "sql_type": sql_type,
             "cs_type": cs_type,
             "cs_name": _pascal_case(sql_name),
             "cs_init": _cs_init_for(cs_type),
+            "is_pk": is_pk,
+            "has_default": has_default,
         })
     return columns
+
+
+def _lower_camel(snake_or_pascal: str) -> str:
+    """Lower-camel form. snake_case → snakeCase. PascalCase → pascalCase."""
+    if "_" in snake_or_pascal:
+        parts = snake_or_pascal.split("_")
+        return parts[0].lower() + "".join(p.capitalize() for p in parts[1:])
+    if not snake_or_pascal:
+        return snake_or_pascal
+    return snake_or_pascal[0].lower() + snake_or_pascal[1:]
+
+
+def _build_create_params(columns: list[dict]) -> str:
+    """Bug E: assemble the Create() factory's parameter list.
+
+    Per entity.md doc line 42: "all non-PK, non-default columns as
+    (Type name, Type name), lowerCamelCase". Empty list → empty string.
+    """
+    parts = [
+        f"{c['cs_type']} {_lower_camel(c['sql_name'])}"
+        for c in columns
+        if not c.get("is_pk") and not c.get("has_default")
+    ]
+    return ", ".join(parts)
 
 
 def _extract_entity_tasks(markdown: str) -> list[dict]:
@@ -345,12 +386,14 @@ def _extract_entity_tasks(markdown: str) -> list[dict]:
                 continue  # documentation-only entity
             invariants_match = re.search(r"\*\*Invariants:\*\*\s*(.+?)(?=\n\n|\Z)", chunk, re.DOTALL)
             invariants = invariants_match.group(1).strip() if invariants_match else "(invariants not specified in tech design)"
+            cols = _parse_create_table_columns(sql)
             tasks.append({
                 "type": "entity",
                 "module": module,
                 "name": name,
-                "columns": _parse_create_table_columns(sql),
+                "columns": cols,
                 "invariants": invariants,
+                "create_params": _build_create_params(cols),
             })
     return tasks
 

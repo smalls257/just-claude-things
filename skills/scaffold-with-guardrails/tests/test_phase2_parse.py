@@ -26,9 +26,9 @@ def test_emits_entity_tasks_with_columns():
     author = next(t for t in entity_tasks if t["name"] == "Author")
     assert author["module"] == "Catalog"
     assert author["columns"] == [
-        {"sql_name": "id",         "sql_type": "UUID",        "cs_type": "Guid",           "cs_name": "Id",        "cs_init": ""},
-        {"sql_name": "name",       "sql_type": "TEXT",        "cs_type": "string",         "cs_name": "Name",      "cs_init": "= default!;"},
-        {"sql_name": "created_at", "sql_type": "TIMESTAMPTZ", "cs_type": "DateTimeOffset", "cs_name": "CreatedAt", "cs_init": ""},
+        {"sql_name": "id",         "sql_type": "UUID",        "cs_type": "Guid",           "cs_name": "Id",        "cs_init": "",            "is_pk": True,  "has_default": False},
+        {"sql_name": "name",       "sql_type": "TEXT",        "cs_type": "string",         "cs_name": "Name",      "cs_init": "= default!;", "is_pk": False, "has_default": False},
+        {"sql_name": "created_at", "sql_type": "TIMESTAMPTZ", "cs_type": "DateTimeOffset", "cs_name": "CreatedAt", "cs_init": "",            "is_pk": False, "has_default": True},
     ]
     assert author["invariants"] == "name is non-empty."
 
@@ -417,3 +417,96 @@ slug: x
         "Status-only response `Response: 404` should yield response=None, "
         f"not the digit `{routes[0]['response']}` captured from the status code."
     )
+
+
+def test_entity_columns_track_pk_and_default():
+    """Bug E precondition: each column must carry `is_pk` and `has_default`
+    so the create-params helper knows what to skip.
+    """
+    design = '''---
+slug: x
+---
+<module name="X">
+<entities>
+
+### Order
+
+```sql
+CREATE TABLE orders (
+  id            UUID         PRIMARY KEY,
+  customer_id   UUID         NOT NULL,
+  total_cents   BIGINT       NOT NULL,
+  created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+```
+
+**Invariants:** total_cents > 0.
+</entities>
+</module>
+'''
+    result = phase2_parse.parse(design)
+    order = next(t for t in result["tasks"] if t["type"] == "entity" and t["name"] == "Order")
+    cols = {c["sql_name"]: c for c in order["columns"]}
+    assert cols["id"]["is_pk"] is True
+    assert cols["id"]["has_default"] is False
+    assert cols["customer_id"]["is_pk"] is False
+    assert cols["customer_id"]["has_default"] is False
+    assert cols["total_cents"]["is_pk"] is False
+    assert cols["total_cents"]["has_default"] is False
+    assert cols["created_at"]["is_pk"] is False
+    assert cols["created_at"]["has_default"] is True
+
+
+def test_entity_create_params_skips_pk_and_default():
+    """Bug E: create_params is a joined Type-name list of columns that are
+    neither PK nor have a DEFAULT clause."""
+    design = '''---
+slug: x
+---
+<module name="X">
+<entities>
+
+### Order
+
+```sql
+CREATE TABLE orders (
+  id            UUID         PRIMARY KEY,
+  customer_id   UUID         NOT NULL,
+  total_cents   BIGINT       NOT NULL,
+  created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+```
+
+**Invariants:** total_cents > 0.
+</entities>
+</module>
+'''
+    result = phase2_parse.parse(design)
+    order = next(t for t in result["tasks"] if t["type"] == "entity" and t["name"] == "Order")
+    assert order["create_params"] == "Guid customerId, long totalCents"
+
+
+def test_entity_create_params_empty_when_all_skipped():
+    """Bug E: a table with only PK and DEFAULT columns yields empty params."""
+    design = '''---
+slug: x
+---
+<module name="X">
+<entities>
+
+### LogEntry
+
+```sql
+CREATE TABLE log_entries (
+  id         UUID         PRIMARY KEY,
+  created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+```
+
+**Invariants:** none.
+</entities>
+</module>
+'''
+    result = phase2_parse.parse(design)
+    log = next(t for t in result["tasks"] if t["type"] == "entity" and t["name"] == "LogEntry")
+    assert log["create_params"] == ""
