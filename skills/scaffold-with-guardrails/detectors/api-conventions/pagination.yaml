@@ -1,0 +1,8 @@
+id: pagination
+display: Pagination query/response shape
+layer: api-conventions
+priority: 50
+files: ["src/**/*.cs"]
+signal:
+  cs: ["class\\s+\\w*PagedResult", "class\\s+PageRequest", "class\\s+PagedResponse"]
+extract: enclosing-class

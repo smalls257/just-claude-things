@@ -1,0 +1,8 @@
+id: problem-details
+display: RFC 7807 ProblemDetails responses
+layer: api-conventions
+priority: 60
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddProblemDetails\\s*\\(", "ProblemDetails\\s*\\{"]
+extract: enclosing-method-or-extension

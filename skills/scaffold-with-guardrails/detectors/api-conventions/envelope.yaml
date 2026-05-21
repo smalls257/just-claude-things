@@ -1,0 +1,8 @@
+id: envelope
+display: Response envelope wrapper
+layer: api-conventions
+priority: 40
+files: ["src/**/*.cs"]
+signal:
+  cs: ["class\\s+ApiResponse<", "class\\s+ApiEnvelope<"]
+extract: enclosing-class
