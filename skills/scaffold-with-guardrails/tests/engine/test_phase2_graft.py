@@ -132,3 +132,100 @@ def test_existing_package_not_duplicated(tmp_path):
     _run(design, program, staged, cpm)
     body = cpm.read_text()
     assert body.count('Include="MS.X"') == 1
+
+
+SNIPPET_WITH_USINGS = '''using Serilog;
+using Foo.Bar;
+
+public static class SerilogConfig
+{
+    public static void Configure(WebApplicationBuilder builder)
+    {
+        Log.Logger = new LoggerConfiguration().CreateLogger();
+        builder.Host.UseSerilog();
+    }
+}
+'''
+
+
+def test_extract_snippet_usings_pulls_top_using_block():
+    """Bug A: snippet usings at top of file must be captured for the host file."""
+    from phase2_graft import _extract_snippet_usings
+    result = _extract_snippet_usings(SNIPPET_WITH_USINGS)
+    assert result == ["using Serilog;", "using Foo.Bar;"]
+
+
+def test_extract_snippet_usings_stops_at_first_non_using():
+    """Once a non-using non-blank line appears, the using block is done."""
+    from phase2_graft import _extract_snippet_usings
+    snippet = '''using A;
+
+namespace Foo;
+
+using B;  // not a top-level using
+
+public class X { }
+'''
+    result = _extract_snippet_usings(snippet)
+    assert result == ["using A;"]
+
+
+def test_wrap_in_file_merges_snippet_usings_with_defaults():
+    """Bug A: host file's `using` block must include snippet usings + defaults,
+    deduped, snippet usings first (they are more specific)."""
+    from phase2_graft import _wrap_in_file
+    out = _wrap_in_file(SNIPPET_WITH_USINGS, "Lib.Api.Logging")
+    # Snippet usings present
+    assert "using Serilog;" in out
+    assert "using Foo.Bar;" in out
+    # Defaults still present
+    assert "using System;" in out
+    assert "using Microsoft.AspNetCore.Builder;" in out
+    # No duplicate `using Serilog;` block
+    assert out.count("using Serilog;") == 1
+
+
+def test_wrap_in_file_emits_nuget_todo_for_known_third_party_root():
+    """Bug A: when a snippet using names a known third-party root (Serilog,
+    MassTransit, MediatR, etc.) emit a `// TODO NUGET: <root>` breadcrumb
+    above its using so the dev sees the package gap."""
+    from phase2_graft import _wrap_in_file
+    out = _wrap_in_file(SNIPPET_WITH_USINGS, "Lib.Api.Logging")
+    # The TODO comment lives immediately above `using Serilog;`.
+    assert "// TODO NUGET: Serilog" in out
+    serilog_idx = out.index("using Serilog;")
+    todo_idx = out.index("// TODO NUGET: Serilog")
+    assert todo_idx < serilog_idx
+
+
+def test_ensure_program_using_inserts_after_last_using():
+    """Bug A: Program.cs gets the reverse-using for the host namespace.
+    Insertion goes after the last `^using ` line at column 0."""
+    from phase2_graft import _ensure_program_using
+    program = '''using System;
+using Microsoft.AspNetCore.Builder;
+
+var builder = WebApplication.CreateBuilder(args);
+// {{CONVENTION:logging}}
+var app = builder.Build();
+app.Run();
+'''
+    out = _ensure_program_using(program, "Lib.Api.Logging")
+    lines = out.splitlines()
+    # Find the position of the new using
+    new_using_idx = next(i for i, l in enumerate(lines) if l == "using Lib.Api.Logging;")
+    # Must be after `using Microsoft.AspNetCore.Builder;`
+    last_existing_idx = next(i for i, l in enumerate(lines) if l == "using Microsoft.AspNetCore.Builder;")
+    assert new_using_idx == last_existing_idx + 1
+
+
+def test_ensure_program_using_is_idempotent():
+    """Bug A: re-running graft must not duplicate the using."""
+    from phase2_graft import _ensure_program_using
+    program = '''using System;
+using Lib.Api.Logging;
+
+var builder = WebApplication.CreateBuilder(args);
+'''
+    out = _ensure_program_using(program, "Lib.Api.Logging")
+    assert out.count("using Lib.Api.Logging;") == 1

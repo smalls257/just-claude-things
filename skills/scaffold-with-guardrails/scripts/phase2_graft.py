@@ -168,15 +168,123 @@ _DEFAULT_USINGS = (
     "using Microsoft.Extensions.DependencyInjection;",
 )
 
+# Bug A: third-party namespace roots we know about. When a snippet using
+# names one of these as its first segment, emit a `// TODO NUGET: <root>`
+# comment so the dev sees the package gap. Not exhaustive — additions are
+# safe but missing entries only cost a comment, not correctness.
+_KNOWN_THIRD_PARTY_ROOTS = frozenset({
+    "Serilog",
+    "MassTransit",
+    "MediatR",
+    "FluentValidation",
+    "Polly",
+    "Dapper",
+    "Npgsql",
+    "Microsoft.AspNetCore.Authentication.JwtBearer",
+})
+
+
+_USING_RE = re.compile(r"^\s*using\s+[A-Za-z0-9_.]+\s*;\s*$")
+
+
+def _extract_snippet_usings(snippet: str) -> list[str]:
+    """Bug A: pull `using X;` lines from the top of a staged snippet.
+
+    Scans line-by-line from the top. Each line that matches a using
+    directive is captured. The first non-blank, non-using line ends the
+    block — even if more using directives appear later, they are NOT
+    captured (only the top preamble is the convention's contract).
+    """
+    out = []
+    for line in snippet.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if not out:
+                continue  # leading blank line, keep scanning
+            continue  # blank between usings, keep scanning
+        if _USING_RE.match(line):
+            out.append(stripped)
+            continue
+        break  # first non-using non-blank → preamble done
+    return out
+
 
 def _wrap_in_file(class_block: str, namespace: str) -> str:
-    """Wrap a bare class block in a file-scoped namespace + default usings."""
+    """Wrap a bare class block in a file-scoped namespace + merged usings.
+
+    Bug A: previously this used `_DEFAULT_USINGS` only and dropped any
+    `using X;` lines that lived at the top of the staged snippet. The
+    grafted host file then failed CS0103 because the snippet's body
+    referenced types from the dropped usings (e.g. `Log.Logger` requires
+    `using Serilog;`). The fix:
+      1. Capture snippet usings via `_extract_snippet_usings`.
+      2. Strip them from the body so the wrapped file does not double-emit.
+      3. Merge with `_DEFAULT_USINGS`, preserving order (snippet first,
+         defaults second), deduped.
+      4. For each snippet using whose first segment is a known third-party
+         root, emit a `// TODO NUGET: <root>` comment above it.
+    """
+    snippet_usings = _extract_snippet_usings(class_block)
+    # Strip the captured usings (and any leading blank lines) from the body.
+    body = class_block
+    for u in snippet_usings:
+        # Remove the first matching using line (account for whitespace).
+        body = re.sub(
+            r"^\s*" + re.escape(u) + r"\s*\n",
+            "",
+            body,
+            count=1,
+        )
+    body = body.lstrip()
+
+    merged_usings: list[str] = []
+    seen: set[str] = set()
+    for u in list(snippet_usings) + list(_DEFAULT_USINGS):
+        if u not in seen:
+            merged_usings.append(u)
+            seen.add(u)
+
+    # Insert NuGet TODOs above snippet usings whose root is third-party.
+    annotated: list[str] = []
+    for u in merged_usings:
+        if u in snippet_usings:
+            m = re.match(r"using\s+([A-Za-z0-9_.]+)\s*;", u)
+            if m:
+                # Match against either the full namespace OR its first segment.
+                ns = m.group(1)
+                root = ns.split(".")[0]
+                if ns in _KNOWN_THIRD_PARTY_ROOTS or root in _KNOWN_THIRD_PARTY_ROOTS:
+                    annotated.append(f"// TODO NUGET: {root}")
+        annotated.append(u)
+
     return (
-        "\n".join(_DEFAULT_USINGS)
+        "\n".join(annotated)
         + f"\n\nnamespace {namespace};\n\n"
-        + class_block.lstrip()
-        + ("\n" if not class_block.endswith("\n") else "")
+        + body
+        + ("\n" if not body.endswith("\n") else "")
     )
+
+
+def _ensure_program_using(program_body: str, host_namespace: str) -> str:
+    """Bug A: insert `using <host_namespace>;` in Program.cs if absent.
+
+    Insertion point: immediately after the last `^using ` line at column 0.
+    If no using lines exist, prepend at the top. Idempotent — already-present
+    using is a no-op.
+    """
+    target_line = f"using {host_namespace};"
+    if target_line in program_body:
+        return program_body
+    lines = program_body.splitlines(keepends=True)
+    last_using_idx = -1
+    for i, line in enumerate(lines):
+        if line.startswith("using ") and line.rstrip().endswith(";"):
+            last_using_idx = i
+    if last_using_idx == -1:
+        return target_line + "\n" + program_body
+    # Insert after the last using.
+    lines.insert(last_using_idx + 1, target_line + "\n")
+    return "".join(lines)
 
 
 def _infer_app_name(target_program: Path) -> str:
@@ -272,6 +380,10 @@ def _graft_one(
     host_path.parent.mkdir(parents=True, exist_ok=True)
     namespace = _host_namespace(app_name, layer)
     host_path.write_text(_wrap_in_file(snippet, namespace))
+
+    # Bug A: ensure Program.cs has `using <host_namespace>;` so the call
+    # line below resolves without a fully-qualified path.
+    program_body = _ensure_program_using(program_body, namespace)
 
     replacement = (
         f"{source_comment}\n"
