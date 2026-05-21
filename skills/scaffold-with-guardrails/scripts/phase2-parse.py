@@ -353,11 +353,15 @@ def _build_create_params(columns: list[dict]) -> str:
 
     Per entity.md doc line 42: "all non-PK, non-default columns as
     (Type name, Type name), lowerCamelCase". Empty list → empty string.
+
+    Direct dict access on is_pk/has_default — these are set by
+    _parse_create_table_columns. Missing field is a parser bug, not a
+    "default to include" fallback.
     """
     parts = [
         f"{c['cs_type']} {_lower_camel(c['sql_name'])}"
         for c in columns
-        if not c.get("is_pk") and not c.get("has_default")
+        if not c["is_pk"] and not c["has_default"]
     ]
     return ", ".join(parts)
 
