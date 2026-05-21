@@ -391,3 +391,38 @@ The migration file uses a SQL-comment version:
 ```
 
 Header placeholders are filled per-file by the generation prompts.
+
+## Convention graft (post-Phase-1.5)
+
+After Phase-2 emits the per-module code from `<module>` blocks, run the
+convention graft to insert adopted snippets at template slot markers:
+
+```bash
+python3 skills/scaffold-with-guardrails/scripts/phase2_graft.py \
+  --design docs/tech-design/<slug>.md \
+  --target-program <generated>/Program.cs \
+  --staged-root .scaffold/staged \
+  --cpm Directory.Packages.props
+```
+
+The graft step:
+1. Reads the `<conventions>` block from the design
+2. For each `<adopted>` (and `adopted="true"` `<dev-named>` / `<discovered>`),
+   loads the staged snippet under `.scaffold/staged/`
+3. Locates the corresponding `// {{CONVENTION:<layer>}}` marker in
+   `Program.cs` and replaces it with the snippet, prefixed by a
+   `// SOURCE: <kind>:<id> — <source>` attribution comment
+4. Appends any `packages` entries to `Directory.Packages.props` (no
+   duplicates)
+5. Halts with `NO_SLOT` if a marker is missing — fix the template
+
+Then run the postbuild sensor in graft-check mode:
+
+```bash
+bash skills/scaffold-with-guardrails/scripts/phase2-postbuild.sh \
+  --check-grafts --design docs/tech-design/<slug>.md \
+  --target-program <generated>/Program.cs
+```
+
+This fails loudly if any `<adopted>` entry produced no `// SOURCE:` line —
+the silent-drop sensor (Sensor over Silent Fallback).
