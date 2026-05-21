@@ -81,3 +81,70 @@ def test_program_cs_markers_not_before_var_builder():
                 f"marker '{layer}' appears BEFORE `var builder = ...` — "
                 f"graft will emit a call line referencing undeclared `builder`"
             )
+
+
+def test_scaffold_md_api_csproj_does_not_reference_persistence():
+    """Bug X7: scaffold.md's canonical Api wiring must not add a
+    ProjectReference to Persistence. The skill's own generated semgrep
+    rule (lib-api-no-persistence-ref) forbids Api→Persistence direct
+    references — playbook must not contradict its own gate.
+    """
+    body = SCAFFOLD_MD.read_text()
+    # The playbook should NOT use a shared `for HOST in Api Service` loop
+    # that applies Persistence to both. After the fix, Api gets a separate
+    # invocation without Persistence.
+    # Red test: the buggy form has a for-loop that includes both Api and
+    # Service, and that loop adds Persistence. After the fix, either:
+    #   (a) The loop is gone and replaced with separate Api/Service blocks, or
+    #   (b) The loop conditionally excludes Persistence for Api.
+    # We test for the simplest fix: two separate dotnet add invocations.
+
+    # Check: does the file still have a `for HOST in Api Service` loop that
+    # references Persistence? If so, the bug is not fixed.
+    buggy_pattern = re.search(
+        r"for HOST in Api Service.*?done",
+        body,
+        re.DOTALL,
+    )
+    if buggy_pattern:
+        loop_content = buggy_pattern.group(0)
+        # If the shared loop mentions Persistence, the bug is present.
+        assert "Persistence" not in loop_content, (
+            "Bug X7 not fixed: `for HOST in Api Service` loop still includes "
+            "Persistence reference, which contradicts lib-api-no-persistence-ref"
+        )
+
+    # Positive check: look for separate Api composition block.
+    api_block_match = re.search(
+        r"# Api composition root.*?\ndotnet add src/.*?\.Api/.*?reference.*?(?=\n(?:dotnet|#))",
+        body,
+        re.DOTALL,
+    )
+    if api_block_match:
+        api_section = api_block_match.group(0)
+        # Extract only the reference lines (after "reference" keyword).
+        # Comments are OK; we just want to ensure the dotnet command doesn't
+        # add Persistence to the Api's reference list.
+        ref_match = re.search(r"reference(.*?)(?=\n(?:dotnet|#))", api_section, re.DOTALL)
+        if ref_match:
+            refs = ref_match.group(1)
+            assert "Persistence" not in refs, (
+                "Api composition root's reference list still includes Persistence"
+            )
+
+
+def test_scaffold_md_persistence_ref_only_for_service_host():
+    """Bug X7 positive check: Persistence ProjectRef is added for Service host
+    only. The two hosts get separate ref-list invocations OR an explicit
+    conditional excludes Persistence from Api.
+    """
+    body = SCAFFOLD_MD.read_text()
+    # Service should have Persistence in its refs.
+    service_blocks = re.findall(
+        r'dotnet add src/"\$APP"\.Service/.*?(?=\n(?:dotnet|# |$))',
+        body,
+        re.DOTALL,
+    )
+    assert any("Persistence" in block for block in service_blocks), (
+        "Service composition root must reference Persistence for background-job wiring"
+    )

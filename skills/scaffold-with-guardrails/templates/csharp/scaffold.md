@@ -210,14 +210,22 @@ dotnet add tests/"$APP".Tests.Unit/"$APP".Tests.Unit.csproj \
              src/"$APP".Infrastructure/"$APP".Infrastructure.csproj \
              src/"$APP".Persistence/"$APP".Persistence.csproj
 
-# Both hosts reference all four layers (composition root)
-for HOST in Api Service; do
-  dotnet add src/"$APP".$HOST/"$APP".$HOST.csproj \
-    reference src/"$APP".Application/"$APP".Application.csproj \
-               src/"$APP".Infrastructure/"$APP".Infrastructure.csproj \
-               src/"$APP".Persistence/"$APP".Persistence.csproj \
-               src/"$APP".Domain/"$APP".Domain.csproj
-done
+# Api composition root — references Application, Infrastructure, Domain.
+# NOTE: NO Persistence direct reference — Api routes data access through
+# Application (clean architecture). The .semgrep/<app>/api.yaml rule
+# `lib-api-no-persistence-ref` enforces this; playbook and rule agree.
+dotnet add src/"$APP".Api/"$APP".Api.csproj \
+  reference src/"$APP".Application/"$APP".Application.csproj \
+             src/"$APP".Infrastructure/"$APP".Infrastructure.csproj \
+             src/"$APP".Domain/"$APP".Domain.csproj
+
+# Service composition root — Worker hosts legitimately wire repos directly
+# for background-job composition. Persistence ref is allowed here.
+dotnet add src/"$APP".Service/"$APP".Service.csproj \
+  reference src/"$APP".Application/"$APP".Application.csproj \
+             src/"$APP".Infrastructure/"$APP".Infrastructure.csproj \
+             src/"$APP".Persistence/"$APP".Persistence.csproj \
+             src/"$APP".Domain/"$APP".Domain.csproj
 
 # NuGet packages — pin MediatR + MassTransit to last MIT releases.
 # Directory.Packages.props (copied above) sets ManagePackageVersionsCentrally=true,
