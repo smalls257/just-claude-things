@@ -135,11 +135,57 @@ def _derive_test_tasks(entity_tasks: list[dict], route_tasks: list[dict]) -> lis
 CONV_BLOCK_RE = re.compile(r"<conventions\b.*?</conventions>", re.DOTALL)
 
 
+def _build_adopted(el) -> AdoptedDecision:
+    """Build an AdoptedDecision, validating required attributes.
+
+    Raises ParseError if any required attribute is missing.
+    """
+    detector = el.get("detector")
+    source = el.get("source")
+    staged = el.get("staged")
+    for attr, val in [("detector", detector), ("source", source), ("staged", staged)]:
+        if val is None:
+            raise ParseError(f"MALFORMED_CONVENTIONS: <adopted> missing required attr '{attr}'")
+    return AdoptedDecision(detector=detector, source=source, staged=staged, packages=el.get("packages", ""))
+
+
+def _build_dev_named(el) -> DevNamedDecision:
+    """Build a DevNamedDecision, validating required attributes.
+
+    Raises ParseError if any required attribute is missing.
+    """
+    target = el.get("target")
+    source = el.get("source")
+    staged = el.get("staged")
+    for attr, val in [("target", target), ("source", source), ("staged", staged)]:
+        if val is None:
+            raise ParseError(f"MALFORMED_CONVENTIONS: <dev-named> missing required attr '{attr}'")
+    return DevNamedDecision(target=target, source=source, staged=staged,
+                            adopted=el.get("adopted", "false") == "true",
+                            packages=el.get("packages", ""))
+
+
+def _build_discovered(el) -> DiscoveredDecision:
+    """Build a DiscoveredDecision, validating required attributes.
+
+    Raises ParseError if any required attribute is missing.
+    """
+    name = el.get("name")
+    source = el.get("source")
+    staged = el.get("staged")
+    for attr, val in [("name", name), ("source", source), ("staged", staged)]:
+        if val is None:
+            raise ParseError(f"MALFORMED_CONVENTIONS: <discovered> missing required attr '{attr}'")
+    return DiscoveredDecision(name=name, source=source, staged=staged,
+                              adopted=el.get("adopted", "false") == "true",
+                              packages=el.get("packages", ""))
+
+
 def _parse_conventions(body: str) -> Optional[Conventions]:
     """Parse a <conventions> block from design markdown.
 
     Returns None if no conventions block is found.
-    Raises ParseError if the block is malformed XML.
+    Raises ParseError if the block is malformed XML or missing required attributes.
     """
     m = CONV_BLOCK_RE.search(body)
     if not m:
@@ -149,35 +195,10 @@ def _parse_conventions(body: str) -> Optional[Conventions]:
     except ET.ParseError as e:
         raise ParseError(f"MALFORMED_CONVENTIONS: {e}") from e
 
-    adopted = [
-        AdoptedDecision(
-            detector=el.get("detector"),
-            source=el.get("source"),
-            staged=el.get("staged"),
-            packages=el.get("packages", "")
-        )
-        for el in root.findall("adopted")
-    ]
-    dev_named = [
-        DevNamedDecision(
-            target=el.get("target"),
-            source=el.get("source"),
-            staged=el.get("staged"),
-            adopted=el.get("adopted", "false") == "true",
-            packages=el.get("packages", "")
-        )
-        for el in root.findall("dev-named")
-    ]
-    discovered = [
-        DiscoveredDecision(
-            name=el.get("name"),
-            source=el.get("source"),
-            staged=el.get("staged"),
-            adopted=el.get("adopted", "false") == "true",
-            packages=el.get("packages", "")
-        )
-        for el in root.findall("discovered")
-    ]
+    adopted = [_build_adopted(el) for el in root.findall("adopted")]
+    dev_named = [_build_dev_named(el) for el in root.findall("dev-named")]
+    discovered = [_build_discovered(el) for el in root.findall("discovered")]
+
     return Conventions(
         reference_repo=root.get("reference-repo", ""),
         reference_repo_commit=root.get("reference-repo-commit", ""),
@@ -293,7 +314,7 @@ def _extract_entity_tasks(markdown: str) -> list[dict]:
             if "CREATE TABLE" not in sql.upper():
                 continue  # documentation-only entity
             invariants_match = re.search(r"\*\*Invariants:\*\*\s*(.+?)(?=\n\n|\Z)", chunk, re.DOTALL)
-            invariants = invariants_match.group(1).strip() if invariants_match else "TODO: define invariants"
+            invariants = invariants_match.group(1).strip() if invariants_match else "(invariants not specified in tech design)"
             tasks.append({
                 "type": "entity",
                 "module": module,
