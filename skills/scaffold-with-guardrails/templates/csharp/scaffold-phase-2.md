@@ -409,9 +409,23 @@ The graft step:
 1. Reads the `<conventions>` block from the design
 2. For each `<adopted>` (and `adopted="true"` `<dev-named>` / `<discovered>`),
    loads the staged snippet under `.scaffold/staged/`
-3. Locates the corresponding `// {{CONVENTION:<layer>}}` marker in
-   `Program.cs` and replaces it with the snippet, prefixed by a
-   `// SOURCE: <kind>:<id> — <source>` attribution comment
+3. For each snippet:
+   a. Lifts the `public ... class X { ... }` block into a separate host file
+      at `src/<App>.Api/<LayerDir>/<Class>.cs`, wrapped in a file-scoped
+      namespace (`namespace <App>.Api.<LayerDir>;`) plus default usings.
+   b. Replaces the `// {{CONVENTION:<layer>}}` marker with a single call
+      line — `builder.Services.<Method>();` (extension on `IServiceCollection`),
+      `<Class>.<Method>(builder);` (static, `WebApplicationBuilder` arg),
+      `app.UseMiddleware<<Class>>();` (any class with `InvokeAsync(HttpContext)`),
+      etc. — prefixed by a `// SOURCE: <kind>:<id> — <source>` attribution
+      comment.
+   c. If the entry shape cannot be inferred, leaves a `// TODO: wire <Class>`
+      comment at the marker and continues (do not block the graft over a
+      heuristic miss).
+   This staged-class-as-host-file shape is required because the scaffold
+   `Program.cs` uses **top-level statements**, which cannot host nested
+   class declarations between statements. Inlining the snippet at the
+   marker (the pre-bug-#6 behavior) produced invalid C#.
 4. Appends any `packages` entries to `Directory.Packages.props` (no
    duplicates)
 5. Halts with `NO_SLOT` if a marker is missing — fix the template

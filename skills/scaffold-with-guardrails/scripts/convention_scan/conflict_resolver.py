@@ -87,6 +87,14 @@ def resolve(
             # Overlap detected; resolve by priority
             winner_claim, _ = winner_pairs[overlapping_pair_index]
 
+            # Same-detector self-overlap is not a conflict — it just means the
+            # detector had multiple signal patterns that both matched within
+            # the same enclosing region (e.g. correlation-id matches both the
+            # class declaration and the `X-Correlation-ID` header literal).
+            # Drop the duplicate; keep the first one for the SOURCE attribution.
+            if winner_claim.detector_id == claim.detector_id:
+                continue
+
             wp = priority[winner_claim.detector_id]
             lp = priority[claim.detector_id]
 

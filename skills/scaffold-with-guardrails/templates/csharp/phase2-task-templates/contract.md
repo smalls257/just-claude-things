@@ -21,6 +21,9 @@
 ## Body template
 
 ```csharp
+using System;
+using {{APP_NAME}}.Domain.{{MODULE}};
+
 namespace {{APP_NAME}}.Api.{{MODULE}}.Contracts;
 
 public sealed record {{NAME}}(
@@ -29,6 +32,22 @@ public sealed record {{NAME}}(
     {{end for}}
 );
 ```
+
+### Why the unconditional `using` for `{{APP_NAME}}.Domain.{{MODULE}}`
+
+Contract DTOs frequently reference Domain enums (e.g. a `HoldResponse` carrying
+a `HoldStatus`). Threading "does this field type live in Domain.{{MODULE}}?"
+through the parser would require knowing every enum name at template-render
+time and was rejected as more invasive than the cost.
+
+Modern C# treats an unused `using` as IDE0005 (info-level), not a warning;
+with `TreatWarningsAsErrors=true` it stays silent unless the project opts in
+to elevating IDE0005. Suppress at the project level via
+`Directory.Build.props` if you do.
+
+`using System;` is included because Guid / DateTime / DateTimeOffset are the
+most common DTO field types; absent the `using`, fields typed `Guid` fail to
+resolve against the file-scoped namespace.
 
 ## Verification
 

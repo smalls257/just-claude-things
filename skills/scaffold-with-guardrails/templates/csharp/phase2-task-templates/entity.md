@@ -28,7 +28,7 @@ namespace {{APP_NAME}}.Domain.{{MODULE}};
 public sealed class {{NAME}}
 {
     {{for each column in inputs.columns:}}
-    public {{column.cs_type}} {{column.cs_name}} { get; private set; }
+    public {{column.cs_type}} {{column.cs_name}} { get; private set; }{{if column.cs_init:}} {{column.cs_init}}{{end if}}
     {{end for}}
 
     private {{NAME}}() { } // Object-initializer use by Create. Dapper hydrates {{NAME}}Row, not the Domain entity.
@@ -43,6 +43,16 @@ public sealed class {{NAME}}
 Skip `id` and any column whose SQL definition includes `DEFAULT`.
 
 If `inputs.invariants` is empty, emit `// TODO: define invariants (none captured in tech-design).` — never emit a trailing-em-dash placeholder.
+
+### Initializer for non-nullable reference-type props
+
+`{{column.cs_init}}` is `= default!;` when `column.cs_type` is a non-nullable
+reference type (`string`, any other class name, etc.) and empty otherwise.
+This silences CS8618 (uninitialized non-nullable property) under
+`TreatWarningsAsErrors=true`. Value types and nullable ref types
+(`string?`, `Foo?`) need no initializer — `default` is already a valid value
+and the compiler knows it. See the parser in `scripts/phase2_parse.py`
+(`_parse_create_table_columns`) for which CS types are reference vs value.
 
 ## Verification
 

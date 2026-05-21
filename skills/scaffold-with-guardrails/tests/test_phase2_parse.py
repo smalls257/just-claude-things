@@ -26,9 +26,9 @@ def test_emits_entity_tasks_with_columns():
     author = next(t for t in entity_tasks if t["name"] == "Author")
     assert author["module"] == "Catalog"
     assert author["columns"] == [
-        {"sql_name": "id",         "sql_type": "UUID",        "cs_type": "Guid",           "cs_name": "Id"},
-        {"sql_name": "name",       "sql_type": "TEXT",        "cs_type": "string",         "cs_name": "Name"},
-        {"sql_name": "created_at", "sql_type": "TIMESTAMPTZ", "cs_type": "DateTimeOffset", "cs_name": "CreatedAt"},
+        {"sql_name": "id",         "sql_type": "UUID",        "cs_type": "Guid",           "cs_name": "Id",        "cs_init": ""},
+        {"sql_name": "name",       "sql_type": "TEXT",        "cs_type": "string",         "cs_name": "Name",      "cs_init": "= default!;"},
+        {"sql_name": "created_at", "sql_type": "TIMESTAMPTZ", "cs_type": "DateTimeOffset", "cs_name": "CreatedAt", "cs_init": ""},
     ]
     assert author["invariants"] == "name is non-empty."
 
@@ -225,6 +225,43 @@ def test_emits_one_migration_task_per_module_with_table_sql():
     # Each table carries its raw CREATE TABLE SQL — emit template will indent/include verbatim.
     assert "CREATE TABLE authors" in lib["tables"][0]["sql"]
     assert "CREATE TABLE books" in lib["tables"][1]["sql"]
+
+
+def test_entity_columns_carry_cs_init_for_non_nullable_reference_types():
+    # Bug #4: under TreatWarningsAsErrors=true, a non-nullable reference-type
+    # property without an initializer raises CS8618. The entity template
+    # consumes `column.cs_init` and appends it after the property declaration
+    # (e.g. `public string Name { get; private set; } = default!;`).
+    #
+    # Lock: string and object (parser fallback) get `= default!;`. Value types
+    # (Guid, int, bool, DateTime, DateTimeOffset, long) get nothing — `default`
+    # is a valid value and the compiler does not warn.
+    result = phase2_parse.parse(FIXTURE.read_text(encoding="utf-8"))
+    author = next(t for t in result["tasks"] if t["type"] == "entity" and t["name"] == "Author")
+    by_name = {c["cs_name"]: c for c in author["columns"]}
+    assert by_name["Id"]["cs_init"] == ""           # Guid (value type)
+    assert by_name["Name"]["cs_init"] == "= default!;"  # string (reference type)
+    assert by_name["CreatedAt"]["cs_init"] == ""    # DateTimeOffset (value type)
+
+
+def test_entity_template_references_column_cs_init():
+    # Bug #4: the entity template must consume `{{column.cs_init}}` so the
+    # parser-emitted initializer suffix actually lands in the generated file.
+    # Without this expression in the template, the parser change is dead code.
+    template = (SKILL_ROOT / "templates" / "csharp" / "phase2-task-templates" / "entity.md").read_text()
+    assert "{{column.cs_init}}" in template, \
+        "entity template must reference column.cs_init to emit = default!; for non-nullable reference props (CS8618 fix)"
+
+
+def test_contract_template_imports_domain_module_namespace():
+    # Bug #5: contract DTOs frequently reference Domain enums (e.g. HoldStatus).
+    # Without `using {{APP_NAME}}.Domain.{{MODULE}};`, those refs fail to
+    # resolve and the build red-lights. Threading "does this field reference
+    # an enum?" through the parser was rejected as more invasive than the
+    # cost of an unconditional using (IDE0005 only, not a warning).
+    template = (SKILL_ROOT / "templates" / "csharp" / "phase2-task-templates" / "contract.md").read_text()
+    assert "using {{APP_NAME}}.Domain.{{MODULE}};" in template, \
+        "contract template must import Domain.<Module> so DTOs can reference Domain enums without a build break"
 
 
 def test_cli_emits_valid_json_to_stdout(tmp_path):

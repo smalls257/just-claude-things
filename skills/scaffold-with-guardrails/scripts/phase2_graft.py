@@ -24,6 +24,172 @@ SLOT_RE_TMPL = r"^\s*//\s*\{\{CONVENTION:%s\}\}\s*$"
 # not in Program.cs. Graft skips these instead of raising NO_SLOT.
 _INFRA_LAYERS = frozenset({"build"})
 
+# Layer → subdirectory under src/<App>.<HostLayer>/ where the snippet file
+# is moved. Maps to the directory layout the previous run used by hand.
+# Unknown layers fall back to the layer name itself (PascalCased).
+_LAYER_DIR = {
+    "logging": "Logging",
+    "observability": "Observability",
+    "auth": "Auth",
+    "data": "Data",
+    "middleware": "Middleware",
+    "http-outbound": "Http",
+    "caching": "Caching",
+    "messaging": "Messaging",
+    "security": "Security",
+    "api-conventions": "ApiConventions",
+}
+
+# Which middleware-ish layers' call site lives AFTER `var app = builder.Build();`
+# rather than before. Matches the Program.cs template — the `middleware` slot
+# is the only one beneath the build line.
+_POST_BUILD_LAYERS = frozenset({"middleware"})
+
+# Match a `public static class <Name>` declaration. We rely on the snippet
+# being self-contained (one outer class). If there are multiple, we take the
+# first — convention-scan only stages one block per detector.
+_CLASS_RE = re.compile(r"public\s+(?:static\s+)?(?:sealed\s+)?(?:partial\s+)?class\s+(\w+)")
+
+# Match a `public static <RetType> <MethodName>(...)` declaration. We collect
+# every candidate and rank them; the ranking decides the call site shape.
+_METHOD_RE = re.compile(
+    r"public\s+static\s+(?:async\s+)?[\w<>,\s\?\[\]]+?\s+(\w+)\s*\(\s*([^)]*)\)",
+    re.DOTALL,
+)
+
+
+def _strip_attrs(s: str) -> str:
+    return re.sub(r"\[[^\]]*\]\s*", "", s).strip()
+
+
+def _ranked_entry_points(snippet: str) -> list[tuple[int, str, str, str]]:
+    """Return candidate entry points ranked by call-site preference.
+
+    Each tuple is (rank, method_name, first_param_type, first_param_name).
+    Lower rank = preferred. Empty list when nothing matches.
+
+    Heuristic precedence (matches the bug-#6 spec):
+      1. extension method `this WebApplicationBuilder`
+      2. extension method `this IServiceCollection`
+      3. extension method `this WebApplication`
+      4. plain static method whose first param is WebApplicationBuilder
+      5. plain static method whose first param is IServiceCollection
+      6. plain static method whose first param is WebApplication
+      7. any other public static method (alphabetical fallback)
+    """
+    candidates: list[tuple[int, str, str, str]] = []
+    for m in _METHOD_RE.finditer(snippet):
+        name = m.group(1)
+        params = m.group(2).strip()
+        if not params:
+            continue
+        first_param = _strip_attrs(params.split(",", 1)[0])
+        is_extension = first_param.startswith("this ")
+        body = first_param[5:].strip() if is_extension else first_param
+        # body now looks like "WebApplicationBuilder builder" — pull the type.
+        parts = body.split()
+        if len(parts) < 2:
+            continue
+        first_type, first_name = parts[0], parts[1]
+        if first_type == "WebApplicationBuilder":
+            rank = 1 if is_extension else 4
+        elif first_type == "IServiceCollection":
+            rank = 2 if is_extension else 5
+        elif first_type == "WebApplication":
+            rank = 3 if is_extension else 6
+        else:
+            rank = 7
+        candidates.append((rank, name, first_type, first_name))
+    # Stable sort: rank first, then alphabetical method name.
+    candidates.sort(key=lambda c: (c[0], c[1]))
+    return candidates
+
+
+_MIDDLEWARE_RE = re.compile(
+    r"public\s+(?:async\s+)?Task\s+InvokeAsync\s*\(\s*HttpContext\b"
+)
+
+
+def _emit_call_line(snippet: str, class_name: str | None) -> str | None:
+    """Render the single line that replaces the slot marker.
+
+    Returns None when no entry point can be inferred — the caller leaves a
+    TODO comment in that case (do not crash the graft over a heuristic miss).
+    """
+    # Middleware classes have no static entry point — they are registered by
+    # type via app.UseMiddleware<T>(). Detect by the InvokeAsync(HttpContext)
+    # signature and short-circuit before the entry-point ranking.
+    if class_name is not None and _MIDDLEWARE_RE.search(snippet):
+        return f"app.UseMiddleware<{class_name}>();"
+
+    eps = _ranked_entry_points(snippet)
+    if not eps:
+        return None
+    rank, method, first_type, _ = eps[0]
+    if rank == 1:  # extension this WebApplicationBuilder
+        return f"builder.{method}();"
+    if rank == 2:  # extension this IServiceCollection
+        return f"builder.Services.{method}();"
+    if rank == 3:  # extension this WebApplication
+        return f"app.{method}();"
+    if class_name is None:
+        return None
+    if rank == 4:  # static (WebApplicationBuilder builder)
+        return f"{class_name}.{method}(builder);"
+    if rank == 5:  # static (IServiceCollection services)
+        return f"{class_name}.{method}(builder.Services);"
+    if rank == 6:  # static (WebApplication app)
+        return f"{class_name}.{method}(app);"
+    return f"{class_name}.{method}();"
+
+
+def _outer_class_name(snippet: str) -> str | None:
+    m = _CLASS_RE.search(snippet)
+    return m.group(1) if m else None
+
+
+def _host_namespace(app_name: str, layer: str) -> str:
+    subdir = _LAYER_DIR.get(layer, layer.replace("-", " ").title().replace(" ", ""))
+    return f"{app_name}.Api.{subdir}"
+
+
+def _host_file_path(target_root: Path, app_name: str, layer: str, class_name: str) -> Path:
+    subdir = _LAYER_DIR.get(layer, layer.replace("-", " ").title().replace(" ", ""))
+    return target_root / "src" / f"{app_name}.Api" / subdir / f"{class_name}.cs"
+
+
+# Default usings written into every grafted host file. The detector layer
+# can suggest narrower ones, but these cover the common surface and the
+# rest is up to the developer's editor's "remove unused" pass.
+_DEFAULT_USINGS = (
+    "using System;",
+    "using Microsoft.AspNetCore.Builder;",
+    "using Microsoft.AspNetCore.Http;",
+    "using Microsoft.Extensions.DependencyInjection;",
+)
+
+
+def _wrap_in_file(class_block: str, namespace: str) -> str:
+    """Wrap a bare class block in a file-scoped namespace + default usings."""
+    return (
+        "\n".join(_DEFAULT_USINGS)
+        + f"\n\nnamespace {namespace};\n\n"
+        + class_block.lstrip()
+        + ("\n" if not class_block.endswith("\n") else "")
+    )
+
+
+def _infer_app_name(target_program: Path) -> str:
+    """Derive the App name from the .Api project path that contains Program.cs.
+
+    `src/<App>.Api/Program.cs` → `<App>`. Falls back to the parent dir name
+    minus a `.Api` suffix if the file is rooted elsewhere.
+    """
+    parent = target_program.parent.name
+    if parent.endswith(".Api"):
+        return parent[: -len(".Api")]
+    return parent
+
 
 def _read_yaml_layer(yaml_path: Path) -> str | None:
     """Return the 'layer' field from a detector YAML, or None on failure."""
@@ -61,12 +227,57 @@ def _slot_exists(program_body: str, layer: str) -> bool:
     return bool(pattern.search(program_body))
 
 
-def _graft_one(program_body: str, layer: str, snippet: str, source_comment: str) -> str:
+def _graft_one(
+    program_body: str,
+    layer: str,
+    snippet: str,
+    source_comment: str,
+    target_root: Path,
+    app_name: str,
+) -> str:
+    """Insert a call line at the slot and write the snippet to a separate host file.
+
+    Bug #6: previously this inlined the full `public static class X { ... }`
+    block at the slot marker, which is invalid C# in a Program.cs that uses
+    top-level statements (nested class declarations cannot appear between
+    statements). The fix:
+      1. Lift the class block into `src/<App>.Api/<LayerDir>/<Class>.cs`
+         wrapped in a file-scoped namespace.
+      2. Replace the marker with a single call line derived from the entry
+         point (extension method on IServiceCollection / WebApplicationBuilder /
+         WebApplication, or static method invocation otherwise).
+      3. When no entry point can be inferred, leave a TODO comment and do
+         not crash — convention-scan stage runs uninstrumented; we surface
+         the gap rather than block the build.
+    """
     pattern = re.compile(SLOT_RE_TMPL % re.escape(layer), re.MULTILINE)
     if not pattern.search(program_body):
         print(f"NO_SLOT: template has no '// {{{{CONVENTION:{layer}}}}}' marker", file=sys.stderr)
         sys.exit(1)
-    replacement = f"{source_comment}\n{snippet.rstrip()}\n"
+
+    class_name = _outer_class_name(snippet)
+    call_line = _emit_call_line(snippet, class_name)
+
+    if class_name is None or call_line is None:
+        # Could not infer a host file or call shape. Leave breadcrumbs at the
+        # slot so the dev can wire it manually; do not crash the graft.
+        replacement = (
+            f"{source_comment}\n"
+            f"// TODO: wire {class_name or '<unknown class>'} — convention-scan "
+            f"could not infer entry shape from staged snippet for layer '{layer}'.\n"
+        )
+        return pattern.sub(replacement, program_body, count=1)
+
+    host_path = _host_file_path(target_root, app_name, layer, class_name)
+    host_path.parent.mkdir(parents=True, exist_ok=True)
+    namespace = _host_namespace(app_name, layer)
+    host_path.write_text(_wrap_in_file(snippet, namespace))
+
+    replacement = (
+        f"{source_comment}\n"
+        f"// HOSTED: src/{app_name}.Api/{_LAYER_DIR.get(layer, layer)}/{class_name}.cs\n"
+        f"{call_line}\n"
+    )
     return pattern.sub(replacement, program_body, count=1)
 
 
@@ -106,12 +317,27 @@ def _graft_packages(cpm_path: Path | None, packages_str: str) -> None:
         _ensure_package(cpm_path, name, version)
 
 
+def _target_root_of(program: Path) -> Path:
+    """Walk up from src/<App>.Api/Program.cs to the repo root.
+
+    The graft writes snippet host files under `<repo-root>/src/<App>.Api/<Layer>/...`,
+    so we need the path two levels above Program.cs in the standard layout.
+    Falls back to two-parent-up if the path differs.
+    """
+    # standard: <root>/src/<App>.Api/Program.cs
+    if program.parent.parent.name == "src":
+        return program.parent.parent.parent
+    return program.parent.parent
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--design", required=True)
     p.add_argument("--target-program", required=True)
     p.add_argument("--staged-root", required=True)
     p.add_argument("--cpm")
+    p.add_argument("--target-root", help="repo root where src/<App>.Api/... lives; inferred from --target-program when omitted")
+    p.add_argument("--app-name", help="App name (defaults to dirname of Program.cs minus .Api suffix)")
     args = p.parse_args()
 
     result = parse_design(Path(args.design))
@@ -123,12 +349,15 @@ def main():
     body = program.read_text()
     staged_root = Path(args.staged_root)
     cpm_path = Path(args.cpm) if args.cpm else None
+    target_root = Path(args.target_root) if args.target_root else _target_root_of(program)
+    app_name = args.app_name or _infer_app_name(program)
 
     for a in result.conventions.adopted:
         layer, is_code_layer = _layer_for_detector(a.detector)
         if is_code_layer:
             body = _graft_one(body, layer, _staged_text(staged_root, a.staged),
-                              f"// SOURCE: adopted:{a.detector} — {a.source}")
+                              f"// SOURCE: adopted:{a.detector} — {a.source}",
+                              target_root, app_name)
         _graft_packages(cpm_path, a.packages)
 
     for d in result.conventions.dev_named:
@@ -139,7 +368,8 @@ def main():
             print(f"WARN_NO_SLOT: no '// {{{{CONVENTION:{layer}}}}}' in template — add marker to graft dev-named:{d.target}", file=sys.stderr)
             continue
         body = _graft_one(body, layer, _staged_text(staged_root, d.staged),
-                          f"// SOURCE: dev-named:{d.target} — {d.source}")
+                          f"// SOURCE: dev-named:{d.target} — {d.source}",
+                          target_root, app_name)
         _graft_packages(cpm_path, d.packages)
 
     for d in result.conventions.discovered:
@@ -150,7 +380,8 @@ def main():
             print(f"WARN_NO_SLOT: no '// {{{{CONVENTION:{layer}}}}}' in template — add marker to graft discovered:{d.name}", file=sys.stderr)
             continue
         body = _graft_one(body, layer, _staged_text(staged_root, d.staged),
-                          f"// SOURCE: discovered:{d.name} — {d.source}")
+                          f"// SOURCE: discovered:{d.name} — {d.source}",
+                          target_root, app_name)
 
     program.write_text(body)
     print("GRAFT_OK", file=sys.stderr)

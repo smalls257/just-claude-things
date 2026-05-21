@@ -11,6 +11,11 @@ def write(p, body):
 
 
 def _seed(tmp_path):
+    """Seed a target tree shaped like a real scaffold: program at
+    src/<App>.Api/Program.cs, staged snippets as `public static class` blocks
+    (which is what convention-scan stages today; bug #6 was the inline-blob
+    fallback being invalid in top-level Program.cs).
+    """
     design = tmp_path / "svc.md"
     design.write_text("""# svc
 <module name="core"/>
@@ -20,7 +25,9 @@ def _seed(tmp_path):
   <dev-named target="flags" source="src/F.cs:L1-L5" staged="staged/dev-flags.cs" adopted="true" packages="LD.SDK:8.0.0"/>
 </conventions>
 """)
-    program = tmp_path / "Program.cs"
+    api_dir = tmp_path / "src" / "Svc.Api"
+    api_dir.mkdir(parents=True)
+    program = api_dir / "Program.cs"
     program.write_text(
         "var builder = WebApplication.CreateBuilder(args);\n"
         "// {{CONVENTION:auth}}\n"
@@ -31,8 +38,24 @@ def _seed(tmp_path):
     )
     staged = tmp_path / "staged"
     staged.mkdir()
-    (staged / "jwt-bearer.cs").write_text("builder.Services.AddJwtBearer();\n")
-    (staged / "dev-flags.cs").write_text("builder.Services.AddFlags();\n")
+    (staged / "jwt-bearer.cs").write_text(
+        "public static class JwtBearerExt\n"
+        "{\n"
+        "    public static IServiceCollection AddJwtBearer(this IServiceCollection s)\n"
+        "    {\n"
+        "        return s;\n"
+        "    }\n"
+        "}\n"
+    )
+    (staged / "dev-flags.cs").write_text(
+        "public static class FlagsExt\n"
+        "{\n"
+        "    public static IServiceCollection AddFlags(this IServiceCollection s)\n"
+        "    {\n"
+        "        return s;\n"
+        "    }\n"
+        "}\n"
+    )
     cpm = tmp_path / "Directory.Packages.props"
     cpm.write_text("<Project>\n  <ItemGroup>\n  </ItemGroup>\n</Project>\n")
     return design, program, staged, cpm
@@ -53,16 +76,25 @@ def test_inserts_snippet_with_source_comment(tmp_path):
     res = _run(design, program, staged, cpm)
     assert res.returncode == 0, res.stderr
     body = program.read_text()
+    # Slot was replaced with a SOURCE attribution + the call line.
     assert "// SOURCE: adopted:jwt-bearer — src/Auth.cs:L1-L5" in body
-    assert "AddJwtBearer" in body
     assert "{{CONVENTION:auth}}" not in body
+    # Extension on IServiceCollection -> builder.Services.AddJwtBearer()
+    assert "builder.Services.AddJwtBearer();" in body
+    # The class declaration must NOT be inlined into Program.cs (bug #6).
+    assert "public static class JwtBearerExt" not in body
+    # Host file landed at src/Svc.Api/Auth/JwtBearerExt.cs.
+    host = program.parent / "Auth" / "JwtBearerExt.cs"
+    assert host.exists()
+    assert "public static class JwtBearerExt" in host.read_text()
 
 
 def test_dev_named_grafted_when_adopted(tmp_path):
     design, program, staged, cpm = _seed(tmp_path)
     res = _run(design, program, staged, cpm)
     body = program.read_text()
-    assert "AddFlags" in body
+    # Dev-named convention is grafted at // {{CONVENTION:dev-flags}}.
+    assert "builder.Services.AddFlags();" in body
 
 
 def test_missing_staged_file_halts(tmp_path):

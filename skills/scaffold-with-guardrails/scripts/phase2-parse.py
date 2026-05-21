@@ -234,6 +234,27 @@ SQL_TO_CS = {
     "BOOLEAN": "bool",
 }
 
+# C# reference types whose properties need `= default!;` to silence CS8618
+# under TreatWarningsAsErrors. Value types (Guid, int, bool, DateTime, etc.)
+# do not — `default` is a valid value and the compiler does not warn.
+# `object` is the parser's fallback for unknown SQL types; treat it as
+# reference for safety so the generated code still compiles.
+_REFERENCE_CS_TYPES = frozenset({"string", "object"})
+
+
+def _cs_init_for(cs_type: str) -> str:
+    """Return the property initializer suffix (e.g. '= default!;') for a CS
+    type, or '' if no initializer is needed.
+
+    A trailing `?` (nullable reference type) means no initializer — `null`
+    is a valid value and CS8618 does not fire.
+    """
+    if cs_type.endswith("?"):
+        return ""
+    if cs_type in _REFERENCE_CS_TYPES:
+        return "= default!;"
+    return ""
+
 
 def _pascal_case(snake: str) -> str:
     return "".join(part.capitalize() for part in snake.split("_"))
@@ -287,6 +308,7 @@ def _parse_create_table_columns(sql: str) -> list[dict]:
             "sql_type": sql_type,
             "cs_type": cs_type,
             "cs_name": _pascal_case(sql_name),
+            "cs_init": _cs_init_for(cs_type),
         })
     return columns
 

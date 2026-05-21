@@ -46,6 +46,27 @@ def _balance(text: str, hit_idx: int) -> tuple[int, int]:
     raise ExtractError("EXTRACT_FAILED: truncated; no matching close-brace")
 
 
+def _balance_forward(text: str, start_idx: int) -> tuple[int, int]:
+    """Find the next { ... } block at or after start_idx. Returns (open_idx, close_idx).
+
+    Used for file-scoped namespaces and other cases where the hit line precedes
+    its own body brace and no enclosing brace exists above it.
+    """
+    open_idx = text.find("{", start_idx)
+    if open_idx < 0:
+        raise ExtractError("EXTRACT_FAILED: no following open-brace")
+    depth = 0
+    for j in range(open_idx, len(text)):
+        c = text[j]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return open_idx, j
+    raise ExtractError("EXTRACT_FAILED: truncated; no matching close-brace")
+
+
 def _header_start(text: str, brace_idx: int) -> int:
     i = brace_idx - 1
     while i >= 0 and text[i] in " \t\r\n":
@@ -57,10 +78,44 @@ def _line_of(text: str, idx: int) -> int:
     return text.count("\n", 0, idx) + 1
 
 
-def _extract_cs(text: str, hit_line: int, mode: str) -> tuple[int, int, str]:
+_CLASS_DECL_RE = re.compile(r"\b(?:class|struct|record|interface)\s+\w+")
+
+
+def _line_bounds(text: str, hit_line: int) -> tuple[int, int]:
+    """Return (line_start_idx, line_end_idx_exclusive) for the 1-indexed hit_line."""
     lines = text.split("\n")
-    hit_idx = sum(len(l) + 1 for l in lines[: hit_line - 1])
-    inner_open, inner_close = _balance(text, hit_idx)
+    line_start = sum(len(l) + 1 for l in lines[: hit_line - 1])
+    line_end = line_start + len(lines[hit_line - 1]) if hit_line <= len(lines) else line_start
+    return line_start, line_end
+
+
+def _hit_line_text(text: str, hit_line: int) -> str:
+    lines = text.split("\n")
+    return lines[hit_line - 1] if 1 <= hit_line <= len(lines) else ""
+
+
+def _resolve_inner_block(text: str, hit_line: int) -> tuple[int, int]:
+    """Find the block braces relevant to the hit line.
+
+    Walks backward from the hit line to find an enclosing `{`. If that fails
+    (e.g. the hit lands on a type-declaration line at file root in a
+    file-scoped namespace), walks forward from the hit line to find the
+    block this declaration opens. This second case is what makes file-scoped
+    namespaces work without rewriting reference repos to block-scoped form.
+    """
+    line_start, line_end = _line_bounds(text, hit_line)
+    try:
+        return _balance(text, line_end - 1 if line_end > line_start else line_start)
+    except ExtractError:
+        # No enclosing brace (file-scoped namespace + hit on type declaration).
+        # If the hit line itself opens a block, use that block.
+        if _CLASS_DECL_RE.search(_hit_line_text(text, hit_line)):
+            return _balance_forward(text, line_start)
+        raise
+
+
+def _extract_cs(text: str, hit_line: int, mode: str) -> tuple[int, int, str]:
+    inner_open, inner_close = _resolve_inner_block(text, hit_line)
 
     if mode == "enclosing-method":
         start = _header_start(text, inner_open)
@@ -68,10 +123,34 @@ def _extract_cs(text: str, hit_line: int, mode: str) -> tuple[int, int, str]:
         return _line_of(text, start), _line_of(text, inner_close), snippet
 
     if mode == "enclosing-class":
-        outer_open, outer_close = _balance(text, inner_open - 1)
-        start = _header_start(text, outer_open)
-        snippet = text[start: outer_close + 1]
-        return _line_of(text, start), _line_of(text, outer_close), snippet
+        # Three shapes to handle:
+        # (a) Hit on the class declaration line in a file-scoped namespace —
+        #     _resolve_inner_block walked forward; inner_open is the class
+        #     body. Header on this block IS the class.
+        # (b) Hit inside the class body in a file-scoped namespace —
+        #     inner_open is a method/property body; we want one level up.
+        # (c) Hit inside a block-scoped namespace — inner_open is the class
+        #     body (when hit is on a member) or the namespace body (when hit
+        #     is on the class line itself).
+        # Walk outward as long as the enclosing header is not a class-like
+        # declaration; stop once we land on a class/struct/record/interface.
+        cur_open, cur_close = inner_open, inner_close
+        for _ in range(4):  # bounded — C# nesting deeper than this is pathological
+            header_start = _header_start(text, cur_open)
+            header = text[header_start:cur_open]
+            if _CLASS_DECL_RE.search(header):
+                snippet = text[header_start: cur_close + 1]
+                return _line_of(text, header_start), _line_of(text, cur_close), snippet
+            try:
+                cur_open, cur_close = _balance(text, cur_open - 1)
+            except ExtractError:
+                break
+        # Fell off the top without finding a class header. Return what we have
+        # rather than crashing — the caller will see an oversized snippet and
+        # the dev review card surfaces the issue.
+        header_start = _header_start(text, inner_open)
+        snippet = text[header_start: inner_close + 1]
+        return _line_of(text, header_start), _line_of(text, inner_close), snippet
 
     if mode == "enclosing-method-or-extension":
         try:
