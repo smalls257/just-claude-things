@@ -41,9 +41,10 @@ def _name_from(file: Path, text: str) -> str:
 
 
 def sweep(repo_root: Path, claimed_files: set[str], top_n: Optional[int]) -> list[DiscoveryCandidate]:
+    resolved_claimed = {str(Path(p).resolve()) for p in claimed_files}
     cands: list[DiscoveryCandidate] = []
     for f in sorted(repo_root.rglob("*.cs")):
-        if str(f) in claimed_files:
+        if str(f.resolve()) in resolved_claimed:
             continue
         if not _is_signal_file(f):
             continue

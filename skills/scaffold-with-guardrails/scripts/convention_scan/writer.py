@@ -175,17 +175,12 @@ def write_conventions(
 
     staged_root.mkdir(parents=True, exist_ok=True)
     for entry in adopted:
-        target = staged_root.parent / entry.staged if not Path(entry.staged).is_absolute() else Path(entry.staged)
-        if entry.staged.startswith("staged/"):
-            target = staged_root / Path(entry.staged).name
-        _atomic_write(target, entry.snippet_text)
+        _atomic_write(staged_root / Path(entry.staged).name, entry.snippet_text)
     for d in dev_named:
         if not d.adopted:
             continue
-        target = staged_root / Path(d.staged).name
-        _atomic_write(target, d.snippet_text)
+        _atomic_write(staged_root / Path(d.staged).name, d.snippet_text)
     for d in discovered:
         if not d.adopted:
             continue
-        target = staged_root / Path(d.staged).name
-        _atomic_write(target, d.snippet_text)
+        _atomic_write(staged_root / Path(d.staged).name, d.snippet_text)
