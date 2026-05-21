@@ -472,10 +472,14 @@ def _extract_route_tasks(markdown: str) -> list[dict]:
             method = h3.group(1)
             path = h3.group(2)
             chunk = h3.group(0)
-            # Accept both backtick-quoted (`Type`) and unquoted forms.
-            # TECH-DESIGN-TAGS.md example uses unquoted; older docs may quote.
-            request_match = re.search(r"Request:\s*`?(\w+)`?", chunk)
-            response_match = re.search(r"Response:\s*\d*\s*`?(\w+)`?", chunk)
+            # Accept both backtick-quoted (`Type`) and unquoted forms. The
+            # captured group requires the type name to start with a letter
+            # or underscore — C# identifier rule — so a malformed
+            # `Response: 404` (status only, no type) does NOT silently
+            # capture `4` as the type. The status code prefix is consumed
+            # by the leading `\d*\s*` and the capture starts after it.
+            request_match = re.search(r"Request:\s*`?([A-Za-z_]\w*)`?", chunk)
+            response_match = re.search(r"Response:\s*\d*\s*`?([A-Za-z_]\w*)`?", chunk)
             tasks.append({
                 "type": "route",
                 "module": module,

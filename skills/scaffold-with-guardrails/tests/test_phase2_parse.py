@@ -389,3 +389,31 @@ def test_routes_tag_raises_unknown_tag_error():
         phase2_parse.parse(bad_design)
     assert "<routes>" in str(excinfo.value)
     assert "<endpoints>" in str(excinfo.value)
+
+
+def test_endpoints_response_status_only_does_not_capture_digit():
+    """Bug B refinement: `Response: 404` (status code only, no type name)
+    must NOT silently capture `4` as the response type. The captured group
+    enforces C# identifier rule (starts with letter or underscore)."""
+    design = '''---
+slug: x
+---
+<module name="X">
+
+<endpoints>
+
+### DELETE /orders/{id}
+
+- Response: 404
+
+</endpoints>
+
+</module>
+'''
+    result = phase2_parse.parse(design)
+    routes = [t for t in result["tasks"] if t["type"] == "route"]
+    assert len(routes) == 1
+    assert routes[0]["response"] is None, (
+        "Status-only response `Response: 404` should yield response=None, "
+        f"not the digit `{routes[0]['response']}` captured from the status code."
+    )
