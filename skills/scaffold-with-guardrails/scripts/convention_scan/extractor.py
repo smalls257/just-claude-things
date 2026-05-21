@@ -1,0 +1,145 @@
+"""Extract enclosing code region around a hit line."""
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+
+class ExtractError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class Region:
+    file_path: str
+    start_line: int
+    end_line: int
+    text: str
+
+
+def _balance(text: str, hit_idx: int) -> tuple[int, int]:
+    """Find { ... } block enclosing hit_idx. Returns (open_idx, close_idx) inclusive."""
+    depth = 0
+    open_idx = -1
+    for i in range(hit_idx, -1, -1):
+        c = text[i]
+        if c == "}":
+            depth += 1
+        elif c == "{":
+            if depth == 0:
+                open_idx = i
+                break
+            depth -= 1
+    if open_idx < 0:
+        raise ExtractError("EXTRACT_FAILED: no enclosing open-brace")
+    depth = 0
+    for j in range(open_idx, len(text)):
+        c = text[j]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return open_idx, j
+    raise ExtractError("EXTRACT_FAILED: truncated; no matching close-brace")
+
+
+def _header_start(text: str, brace_idx: int) -> int:
+    i = brace_idx - 1
+    while i >= 0 and text[i] in " \t\r\n":
+        i -= 1
+    return text.rfind("\n", 0, i) + 1
+
+
+def _line_of(text: str, idx: int) -> int:
+    return text.count("\n", 0, idx) + 1
+
+
+def _extract_cs(text: str, hit_line: int, mode: str) -> tuple[int, int, str]:
+    lines = text.split("\n")
+    hit_idx = sum(len(l) + 1 for l in lines[: hit_line - 1])
+    inner_open, inner_close = _balance(text, hit_idx)
+
+    if mode == "enclosing-method":
+        start = _header_start(text, inner_open)
+        snippet = text[start: inner_close + 1]
+        return _line_of(text, start), _line_of(text, inner_close), snippet
+
+    if mode == "enclosing-class":
+        outer_open, outer_close = _balance(text, inner_open - 1)
+        start = _header_start(text, outer_open)
+        snippet = text[start: outer_close + 1]
+        return _line_of(text, start), _line_of(text, outer_close), snippet
+
+    if mode == "enclosing-method-or-extension":
+        try:
+            outer_open, outer_close = _balance(text, inner_open - 1)
+        except ExtractError:
+            start = _header_start(text, inner_open)
+            return _line_of(text, start), _line_of(text, inner_close), text[start: inner_close + 1]
+        outer_header_start = _header_start(text, outer_open)
+        outer_header = text[outer_header_start:outer_open]
+        if "static class" in outer_header:
+            snippet = text[outer_header_start: outer_close + 1]
+            return _line_of(text, outer_header_start), _line_of(text, outer_close), snippet
+        start = _header_start(text, inner_open)
+        return _line_of(text, start), _line_of(text, inner_close), text[start: inner_close + 1]
+
+    raise ExtractError(f"UNKNOWN_MODE: {mode}")
+
+
+def _extract_json_section(text: str, hit_line: int) -> tuple[int, int, str]:
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ExtractError(f"EXTRACT_FAILED: invalid JSON: {e}") from e
+    lines = text.split("\n")
+    hit_idx = sum(len(l) + 1 for l in lines[: hit_line - 1])
+    for key in obj:
+        key_pat = re.compile(r'"' + re.escape(key) + r'"\s*:')
+        for m in key_pat.finditer(text):
+            value_start = text.find("{", m.end())
+            if value_start < 0:
+                continue
+            try:
+                _, value_end = _balance(text, value_start)
+            except ExtractError:
+                continue
+            start = text.rfind("\n", 0, m.start()) + 1
+            if start <= hit_idx <= value_end:
+                snippet = text[start: value_end + 1]
+                return _line_of(text, start), _line_of(text, value_end), snippet
+    raise ExtractError("EXTRACT_FAILED: no enclosing JSON section")
+
+
+def _extract_props_property(text: str, hit_line: int) -> tuple[int, int, str]:
+    lines = text.split("\n")
+    if hit_line < 1 or hit_line > len(lines):
+        raise ExtractError("EXTRACT_FAILED: hit line OOB")
+    line = lines[hit_line - 1]
+    if not re.search(r"<\w+>.*</\w+>", line):
+        raise ExtractError("EXTRACT_FAILED: not a single-line property")
+    return hit_line, hit_line, line
+
+
+def extract(path: Path, hit_line: int, mode: str) -> Region:
+    text = path.read_text(errors="replace")
+    if mode.startswith("line-range:"):
+        n = int(mode.split(":")[1])
+        all_lines = text.split("\n")
+        start = max(1, hit_line - n)
+        end = min(len(all_lines), hit_line + n)
+        snippet = "\n".join(all_lines[start - 1: end])
+        return Region(str(path), start, end, snippet)
+    if mode == "appsettings-section":
+        s, e, t = _extract_json_section(text, hit_line)
+        return Region(str(path), s, e, t)
+    if mode == "props-property":
+        s, e, t = _extract_props_property(text, hit_line)
+        return Region(str(path), s, e, t)
+    if mode in ("enclosing-method", "enclosing-class", "enclosing-method-or-extension"):
+        s, e, t = _extract_cs(text, hit_line, mode)
+        return Region(str(path), s, e, t)
+    raise ExtractError(f"UNKNOWN_MODE: {mode}")
