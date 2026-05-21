@@ -1,0 +1,8 @@
+id: polly-resilience
+display: Polly resilience policies
+layer: http-outbound
+priority: 60
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddPolicyHandler\\s*\\(", "AddStandardResilienceHandler\\s*\\("]
+extract: enclosing-method-or-extension
