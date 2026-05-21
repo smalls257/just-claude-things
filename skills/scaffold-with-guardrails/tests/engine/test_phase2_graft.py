@@ -258,3 +258,93 @@ public class X { }
         "using Serilog;  // for structured logging",
         "using Foo.Bar;  // utility",
     ]
+
+
+def test_ensure_package_emits_well_formed_indented_xml(tmp_path):
+    """Bug X4a: _ensure_package must produce well-indented XML so the
+    appended <PackageVersion> sits on its own line before </ItemGroup>,
+    not run-on. dotnet build tolerates ugly XML, but linters and humans
+    don't.
+    """
+    from phase2_graft import _ensure_package
+    cpm = tmp_path / "Directory.Packages.props"
+    cpm.write_text(
+        '<Project>\n'
+        '  <ItemGroup>\n'
+        '    <PackageVersion Include="Existing" Version="1.0.0" />\n'
+        '  </ItemGroup>\n'
+        '</Project>\n'
+    )
+    _ensure_package(cpm, "Serilog", "3.1.1")
+    body = cpm.read_text()
+    # The new <PackageVersion> must sit on its own line, not run-on with </ItemGroup>.
+    assert "Serilog" in body
+    assert 'Version="3.1.1"' in body
+    # No run-on: should not contain `</ItemGroup>` on the same line as the new entry.
+    for line in body.splitlines():
+        if "Serilog" in line:
+            assert "</ItemGroup>" not in line, (
+                f"Run-on detected — new PackageVersion sits on same line as </ItemGroup>: {line!r}"
+            )
+
+
+def test_ensure_csproj_reference_adds_packageref_without_version(tmp_path):
+    """Bug X4b: graft must add <PackageReference Include="Name" /> to the csproj
+    so central package management can resolve the package. The PackageReference
+    has no Version attribute — that lives in Directory.Packages.props.
+    """
+    from phase2_graft import _ensure_csproj_reference
+    csproj = tmp_path / "MyApp.Api.csproj"
+    csproj.write_text(
+        '<Project Sdk="Microsoft.NET.Sdk.Web">\n'
+        '  <PropertyGroup>\n'
+        '    <TargetFramework>net9.0</TargetFramework>\n'
+        '  </PropertyGroup>\n'
+        '  <ItemGroup>\n'
+        '  </ItemGroup>\n'
+        '</Project>\n'
+    )
+    _ensure_csproj_reference(csproj, "Serilog")
+    body = csproj.read_text()
+    assert '<PackageReference Include="Serilog"' in body
+    # Critical: NO Version attribute on the PackageReference (CPM provides it).
+    import re
+    m = re.search(r'<PackageReference Include="Serilog"[^/]*/>', body)
+    assert m is not None
+    assert 'Version=' not in m.group(0), (
+        "PackageReference must NOT have Version under central package management"
+    )
+
+
+def test_ensure_csproj_reference_is_idempotent(tmp_path):
+    """Bug X4b: re-running graft must not add duplicate <PackageReference> lines."""
+    from phase2_graft import _ensure_csproj_reference
+    csproj = tmp_path / "MyApp.Api.csproj"
+    csproj.write_text(
+        '<Project Sdk="Microsoft.NET.Sdk.Web">\n'
+        '  <ItemGroup>\n'
+        '    <PackageReference Include="Serilog" />\n'
+        '  </ItemGroup>\n'
+        '</Project>\n'
+    )
+    _ensure_csproj_reference(csproj, "Serilog")
+    body = csproj.read_text()
+    assert body.count('Include="Serilog"') == 1
+
+
+def test_ensure_csproj_reference_creates_itemgroup_if_missing(tmp_path):
+    """Bug X4b: csproj without an existing ItemGroup must get one created
+    when graft adds the first package reference."""
+    from phase2_graft import _ensure_csproj_reference
+    csproj = tmp_path / "MyApp.Api.csproj"
+    csproj.write_text(
+        '<Project Sdk="Microsoft.NET.Sdk.Web">\n'
+        '  <PropertyGroup>\n'
+        '    <TargetFramework>net9.0</TargetFramework>\n'
+        '  </PropertyGroup>\n'
+        '</Project>\n'
+    )
+    _ensure_csproj_reference(csproj, "Serilog")
+    body = csproj.read_text()
+    assert "<ItemGroup>" in body
+    assert '<PackageReference Include="Serilog"' in body

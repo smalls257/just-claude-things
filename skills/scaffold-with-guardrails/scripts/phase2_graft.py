@@ -419,7 +419,37 @@ def _ensure_package(cpm_path: Path, name: str, version: str) -> None:
     if group is None:
         group = ET.SubElement(root, "ItemGroup")
     ET.SubElement(group, "PackageVersion", attrib={"Include": name, "Version": version})
-    cpm_path.write_text(ET.tostring(root, encoding="unicode"))
+    # Bug X4a: re-indent so the new <PackageVersion> doesn't run on with
+    # </ItemGroup>. ET.tostring preserves source whitespace but appends new
+    # SubElements without a tail. Pretty-printing the whole tree fixes it.
+    ET.indent(root, space="  ")
+    cpm_path.write_text(ET.tostring(root, encoding="unicode") + "\n")
+
+
+def _ensure_csproj_reference(csproj_path: Path, name: str) -> None:
+    """Bug X4b: add <PackageReference Include="Name" /> to a csproj if absent.
+
+    Under central package management (`ManagePackageVersionsCentrally=true`),
+    csprojs declare PackageReference WITHOUT Version — the version lives in
+    Directory.Packages.props. Without this reference, the project does not
+    consume the package and `dotnet build` fails CS0246 even though the
+    version is pinned in .props.
+    """
+    body = csproj_path.read_text()
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError as e:
+        print(f"CSPROJ_PARSE_ERROR: {csproj_path}: {e}", file=sys.stderr)
+        sys.exit(1)
+    for pr in root.iter("PackageReference"):
+        if pr.get("Include") == name:
+            return  # already present
+    group = root.find("ItemGroup")
+    if group is None:
+        group = ET.SubElement(root, "ItemGroup")
+    ET.SubElement(group, "PackageReference", attrib={"Include": name})
+    ET.indent(root, space="  ")
+    csproj_path.write_text(ET.tostring(root, encoding="unicode") + "\n")
 
 
 def _staged_text(staged_root: Path, staged_attr: str) -> str:
@@ -430,15 +460,19 @@ def _staged_text(staged_root: Path, staged_attr: str) -> str:
     return target.read_text()
 
 
-def _graft_packages(cpm_path: Path | None, packages_str: str) -> None:
-    if not cpm_path or not packages_str:
+def _graft_packages(cpm_path: Path | None, packages_str: str, csproj_paths: list[Path] | None = None) -> None:
+    if not packages_str:
         return
     for pkg in packages_str.split(","):
         pkg = pkg.strip()
         if not pkg or ":" not in pkg:
             continue
         name, version = pkg.split(":", 1)
-        _ensure_package(cpm_path, name, version)
+        if cpm_path:
+            _ensure_package(cpm_path, name, version)
+        if csproj_paths:
+            for csproj in csproj_paths:
+                _ensure_csproj_reference(csproj, name)
 
 
 def _target_root_of(program: Path) -> Path:
@@ -475,6 +509,7 @@ def main():
     cpm_path = Path(args.cpm) if args.cpm else None
     target_root = Path(args.target_root) if args.target_root else _target_root_of(program)
     app_name = args.app_name or _infer_app_name(program)
+    api_csprojs = list(target_root.glob("src/*.Api/*.csproj"))
 
     for a in result.conventions.adopted:
         layer, is_code_layer = _layer_for_detector(a.detector)
@@ -482,7 +517,7 @@ def main():
             body = _graft_one(body, layer, _staged_text(staged_root, a.staged),
                               f"// SOURCE: adopted:{a.detector} — {a.source}",
                               target_root, app_name)
-        _graft_packages(cpm_path, a.packages)
+        _graft_packages(cpm_path, a.packages, api_csprojs)
 
     for d in result.conventions.dev_named:
         if not d.adopted:
@@ -494,7 +529,7 @@ def main():
         body = _graft_one(body, layer, _staged_text(staged_root, d.staged),
                           f"// SOURCE: dev-named:{d.target} — {d.source}",
                           target_root, app_name)
-        _graft_packages(cpm_path, d.packages)
+        _graft_packages(cpm_path, d.packages, api_csprojs)
 
     for d in result.conventions.discovered:
         if not d.adopted:
