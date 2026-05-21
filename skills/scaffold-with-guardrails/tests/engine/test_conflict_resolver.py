@@ -59,3 +59,11 @@ def test_different_files_never_conflict():
     winners, conflicts = resolve(claims, regions, dets)
     assert len(winners) == 2
     assert len(conflicts) == 0
+
+
+def test_unknown_detector_id_halts():
+    dets = [_det("a", 80)]
+    claims = [_claim("ghost", "f.cs", 10)]
+    regions = {("ghost", "f.cs", 10): _region("f.cs", 5, 20)}
+    with pytest.raises(ConflictError, match="UNKNOWN_DETECTOR_IDS"):
+        resolve(claims, regions, dets)

@@ -42,19 +42,24 @@ def resolve(
         Tuple of (winning claims, conflicts).
 
     Raises:
-        ConflictError: If equal-priority detectors overlap.
+        ConflictError: If equal-priority detectors overlap or detector ID is unknown.
     """
-    # Build priority lookup
+    # Build priority lookup and validate all claim detector IDs
     priority = {d.id: d.priority for d in detectors}
+    registered_ids = set(d.id for d in detectors)
+    unknown_ids = {c.detector_id for c in claims} - registered_ids
+    if unknown_ids:
+        raise ConflictError(
+            f"UNKNOWN_DETECTOR_IDS: {sorted(unknown_ids)}"
+        )
 
     # Sort claims by priority (descending), then by detector_id, then by line_number
     sorted_claims = sorted(
         claims,
-        key=lambda c: (-priority.get(c.detector_id, 0), c.detector_id, c.line_number),
+        key=lambda c: (-priority[c.detector_id], c.detector_id, c.line_number),
     )
 
-    winners: list[Claim] = []
-    winner_regions: list[Region] = []
+    winner_pairs: list[tuple[Claim, Region]] = []
     conflicts: list[Conflict] = []
 
     for claim in sorted_claims:
@@ -63,30 +68,27 @@ def resolve(
 
         # If no region, claim passes through automatically
         if region is None:
-            winners.append(claim)
+            winner_pairs.append((claim, None))
             continue
 
         # Check for overlap with any existing winner region
         overlap_with = None
-        for wr in winner_regions:
-            if _overlaps(region, wr):
+        overlapping_pair_index = None
+        for idx, (_, wr) in enumerate(winner_pairs):
+            if wr is not None and _overlaps(region, wr):
                 overlap_with = wr
+                overlapping_pair_index = idx
                 break
 
         if overlap_with is None:
             # No overlap; this claim wins
-            winners.append(claim)
-            winner_regions.append(region)
+            winner_pairs.append((claim, region))
         else:
             # Overlap detected; resolve by priority
-            # Find which winner owns overlap_with
-            winner_claim = next(
-                w for w in winners
-                if regions.get((w.detector_id, w.file_path, w.line_number)) is overlap_with
-            )
+            winner_claim, _ = winner_pairs[overlapping_pair_index]
 
-            wp = priority.get(winner_claim.detector_id, 0)
-            lp = priority.get(claim.detector_id, 0)
+            wp = priority[winner_claim.detector_id]
+            lp = priority[claim.detector_id]
 
             if wp == lp:
                 raise ConflictError(
@@ -107,4 +109,6 @@ def resolve(
                 overlap_end=overlap_end,
             ))
 
+    # Extract just the claims from the pairs
+    winners = [claim for claim, _ in winner_pairs]
     return winners, conflicts
