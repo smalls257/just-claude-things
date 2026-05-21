@@ -64,7 +64,7 @@ def test_unresolved_namespace_surfaced(tmp_path):
 
 
 def test_multi_version_picks_highest(tmp_path, capsys):
-    cpm = CPM.replace('Version="8.0.5"', 'Version="8.0.5"')  # baseline
+    cpm = CPM
     write(tmp_path / "Directory.Packages.props", cpm)
     cpm2 = """
 <Project>

@@ -49,7 +49,8 @@ def _load_csproj_packagerefs(repo_root: Path) -> set[str]:
     for csproj in repo_root.rglob("*.csproj"):
         try:
             root = ET.parse(csproj).getroot()
-        except ET.ParseError:
+        except ET.ParseError as e:
+            print(f"CSPROJ_PARSE_ERROR: {csproj}: {e}", file=sys.stderr)
             continue
         for pr in root.iter("PackageReference"):
             name = pr.get("Include")
