@@ -44,8 +44,16 @@ def _load_packageversions(repo_root: Path) -> dict[str, list[str]]:
     return table
 
 
-def _load_csproj_packagerefs(repo_root: Path) -> set[str]:
-    refs: set[str] = set()
+def _load_csproj_packagerefs(repo_root: Path) -> dict[str, list[str]]:
+    """Return {package_name: [versions]} from <PackageReference> directives.
+
+    Reference repos that pin versions inline (without Directory.Packages.props)
+    pass their versions through this map so the resolver can hand them to the
+    grafter. Packages without an inline Version (under central package
+    management) contribute an empty list — the name is registered but no
+    csproj-side version is available; .props remains the canonical source.
+    """
+    table: dict[str, list[str]] = {}
     for csproj in repo_root.rglob("*.csproj"):
         try:
             root = ET.parse(csproj).getroot()
@@ -54,9 +62,13 @@ def _load_csproj_packagerefs(repo_root: Path) -> set[str]:
             continue
         for pr in root.iter("PackageReference"):
             name = pr.get("Include")
-            if name:
-                refs.add(name)
-    return refs
+            ver = pr.get("Version")
+            if not name:
+                continue
+            table.setdefault(name, [])
+            if ver:
+                table[name].append(ver)
+    return table
 
 
 def _candidate_for_namespace(ns: str, all_packages: set[str]) -> str | None:
@@ -73,8 +85,19 @@ def resolve_packages(
     namespaces = [m.group(1) for m in USING_RE.finditer(snippet_text)]
     namespaces = [n for n in namespaces if not any(n == p or n.startswith(p + ".") for p in SYSTEM_PREFIXES)]
 
-    versions = _load_packageversions(repo_root)
-    available = set(versions.keys()) | _load_csproj_packagerefs(repo_root)
+    props_versions = _load_packageversions(repo_root)
+    csproj_versions = _load_csproj_packagerefs(repo_root)
+    # available = union of names from both sources
+    available = set(props_versions.keys()) | set(csproj_versions.keys())
+    # merged versions: .props wins when both sources pin the same package.
+    versions: dict[str, list[str]] = {}
+    for name in available:
+        if name in props_versions and props_versions[name]:
+            versions[name] = props_versions[name]
+        elif name in csproj_versions and csproj_versions[name]:
+            versions[name] = csproj_versions[name]
+        else:
+            versions[name] = []
 
     resolved: dict[str, str] = {}
     unresolved: list[str] = []

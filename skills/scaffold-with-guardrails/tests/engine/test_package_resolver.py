@@ -82,3 +82,87 @@ def test_multi_version_picks_highest(tmp_path, capsys):
     versions = [p.version for p in pkgs if p.name == "Microsoft.AspNetCore.Authentication.JwtBearer"]
     assert versions == ["9.0.1"]
     assert "PACKAGE_VERSION_PICK" in capsys.readouterr().err
+
+
+def test_resolver_picks_up_csproj_pinned_version(tmp_path):
+    """Task 8 / Bug X1: reference repos may pin package versions inline in
+    csproj `<PackageReference Version="...">` rather than in
+    Directory.Packages.props. The resolver must use those versions
+    when no .props pin is available.
+    """
+    csproj = tmp_path / "Reference.Api.csproj"
+    csproj.write_text('''<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Serilog" Version="3.1.1" />
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.1" />
+  </ItemGroup>
+</Project>
+''')
+    src = tmp_path / "src" / "Reference.Api" / "Logging" / "SerilogConfig.cs"
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_text("using Serilog;\npublic static class X {}\n")
+    snippet = "using Serilog;\nusing Serilog.AspNetCore;\npublic class C {}\n"
+
+    packages, unresolved = resolve_packages(snippet, src, tmp_path)
+    names = {p.name for p in packages}
+    assert "Serilog" in names
+    assert "Serilog.AspNetCore" in names
+    assert unresolved == []
+    # Versions came from csproj, not .props
+    by_name = {p.name: p.version for p in packages}
+    assert by_name["Serilog"] == "3.1.1"
+    assert by_name["Serilog.AspNetCore"] == "8.0.1"
+
+
+def test_resolver_prefers_props_version_when_both_sources_pin(tmp_path):
+    """Directory.Packages.props is the canonical pin source. If both sources
+    pin the same package, .props wins. (csproj is fallback for unpinned setups.)"""
+    props = tmp_path / "Directory.Packages.props"
+    props.write_text('''<Project>
+  <ItemGroup>
+    <PackageVersion Include="Serilog" Version="4.0.0" />
+  </ItemGroup>
+</Project>
+''')
+    csproj = tmp_path / "X.csproj"
+    csproj.write_text('''<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <PackageReference Include="Serilog" Version="3.1.1" />
+  </ItemGroup>
+</Project>
+''')
+    src = tmp_path / "src" / "X.cs"
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_text("using Serilog;\nclass X {}\n")
+    snippet = "using Serilog;\nclass C {}\n"
+
+    packages, unresolved = resolve_packages(snippet, src, tmp_path)
+    by_name = {p.name: p.version for p in packages}
+    assert by_name["Serilog"] == "4.0.0"
+    assert unresolved == []
+
+
+def test_resolver_handles_csproj_packageref_without_version(tmp_path):
+    """A csproj `<PackageReference>` without an inline Version attribute is
+    valid under central package management. It should still register the
+    package name in `available` (so it's not falsely unresolved if
+    Directory.Packages.props pins it), but contribute no version to the
+    csproj-side version map. Existing behavior must hold."""
+    csproj = tmp_path / "X.csproj"
+    csproj.write_text('''<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <PackageReference Include="Serilog" />
+  </ItemGroup>
+</Project>
+''')
+    src = tmp_path / "X.cs"
+    src.write_text("using Serilog;\nclass X {}\n")
+    snippet = "using Serilog;\nclass C {}\n"
+
+    packages, unresolved = resolve_packages(snippet, src, tmp_path)
+    # Without a .props pin and without a csproj-inline version, this is unresolved.
+    assert packages == []
+    assert "Serilog" in unresolved
