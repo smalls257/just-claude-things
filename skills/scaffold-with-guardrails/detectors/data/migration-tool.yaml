@@ -1,0 +1,8 @@
+id: migration-tool
+display: Database migration tooling (EF/FluentMigrator/DbUp)
+layer: data
+priority: 70
+files: ["src/**/*.cs", "src/**/*.csproj"]
+signal:
+  cs: ["context\\.Database\\.Migrate\\s*\\(", "FluentMigrator", "DbUp\\."]
+extract: enclosing-method-or-extension

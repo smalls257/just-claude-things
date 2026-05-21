@@ -1,0 +1,8 @@
+id: repository-pattern
+display: Repository/UnitOfWork registration
+layer: data
+priority: 60
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddScoped<I\\w*Repository", "AddScoped<IUnitOfWork"]
+extract: enclosing-method-or-extension
