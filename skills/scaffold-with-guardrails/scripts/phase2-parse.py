@@ -4,7 +4,73 @@ from __future__ import annotations
 import json
 import re
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional, List
+from xml.etree import ElementTree as ET
+
+
+class ParseError(Exception):
+    """Raised when parsing encounters a malformed structure."""
+    pass
+
+
+@dataclass(frozen=True)
+class Module:
+    """Represents a <module> declaration."""
+    name: str
+
+
+@dataclass(frozen=True)
+class AdoptedDecision:
+    """Represents an adopted convention decision."""
+    detector: str
+    source: str
+    staged: str
+    packages: str
+
+
+@dataclass(frozen=True)
+class DevNamedDecision:
+    """Represents a dev-named convention decision."""
+    target: str
+    source: str
+    staged: str
+    adopted: bool
+    packages: str
+
+
+@dataclass(frozen=True)
+class DiscoveredDecision:
+    """Represents a discovered convention decision."""
+    name: str
+    source: str
+    staged: str
+    adopted: bool
+    packages: str
+
+
+@dataclass(frozen=True)
+class Conventions:
+    """Represents a <conventions> block with all decision types."""
+    reference_repo: str
+    reference_repo_commit: str
+    scanned_at: str
+    engine_version: str
+    adopted: List[AdoptedDecision] = field(default_factory=list)
+    dev_named: List[DevNamedDecision] = field(default_factory=list)
+    discovered: List[DiscoveredDecision] = field(default_factory=list)
+
+
+@dataclass
+class ParseResult:
+    """Result of parsing a design document."""
+    modules: List[Module]
+    conventions: Optional[Conventions] = None
+    # Legacy fields for backward compatibility with dict interface
+    app_name_hint: str = ""
+    slug: str = ""
+    tasks: List[dict] = field(default_factory=list)
 
 
 def parse(markdown: str) -> dict:
@@ -26,6 +92,25 @@ def parse(markdown: str) -> dict:
     }
 
 
+def parse_design(path: Path) -> ParseResult:
+    """Parse a tech-design markdown file into modules and conventions.
+
+    Args:
+        path: Path to the design markdown file.
+
+    Returns:
+        ParseResult with modules and conventions (if present).
+
+    Raises:
+        ParseError: If the conventions block is malformed XML.
+    """
+    markdown = path.read_text(encoding="utf-8")
+    module_names = _extract_module_names(markdown)
+    modules = [Module(name=name) for name in module_names]
+    conventions = _parse_conventions(markdown)
+    return ParseResult(modules=modules, conventions=conventions)
+
+
 def _entity_to_row_task(entity_task: dict) -> dict:
     return {
         "type": "row",
@@ -45,6 +130,63 @@ def _derive_test_tasks(entity_tasks: list[dict], route_tasks: list[dict]) -> lis
         for r in route_tasks
     ]
     return unit_tests + integ_tests
+
+
+CONV_BLOCK_RE = re.compile(r"<conventions\b.*?</conventions>", re.DOTALL)
+
+
+def _parse_conventions(body: str) -> Optional[Conventions]:
+    """Parse a <conventions> block from design markdown.
+
+    Returns None if no conventions block is found.
+    Raises ParseError if the block is malformed XML.
+    """
+    m = CONV_BLOCK_RE.search(body)
+    if not m:
+        return None
+    try:
+        root = ET.fromstring(m.group(0))
+    except ET.ParseError as e:
+        raise ParseError(f"MALFORMED_CONVENTIONS: {e}") from e
+
+    adopted = [
+        AdoptedDecision(
+            detector=el.get("detector"),
+            source=el.get("source"),
+            staged=el.get("staged"),
+            packages=el.get("packages", "")
+        )
+        for el in root.findall("adopted")
+    ]
+    dev_named = [
+        DevNamedDecision(
+            target=el.get("target"),
+            source=el.get("source"),
+            staged=el.get("staged"),
+            adopted=el.get("adopted", "false") == "true",
+            packages=el.get("packages", "")
+        )
+        for el in root.findall("dev-named")
+    ]
+    discovered = [
+        DiscoveredDecision(
+            name=el.get("name"),
+            source=el.get("source"),
+            staged=el.get("staged"),
+            adopted=el.get("adopted", "false") == "true",
+            packages=el.get("packages", "")
+        )
+        for el in root.findall("discovered")
+    ]
+    return Conventions(
+        reference_repo=root.get("reference-repo", ""),
+        reference_repo_commit=root.get("reference-repo-commit", ""),
+        scanned_at=root.get("scanned-at", ""),
+        engine_version=root.get("engine-version", ""),
+        adopted=adopted,
+        dev_named=dev_named,
+        discovered=discovered,
+    )
 
 
 def _extract_frontmatter_slug(markdown: str) -> str:
