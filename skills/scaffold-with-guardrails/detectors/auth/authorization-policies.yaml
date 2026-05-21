@@ -1,0 +1,8 @@
+id: authorization-policies
+display: AuthZ policy registration
+layer: auth
+priority: 60
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddAuthorization\\s*\\(.*=>", "options\\.AddPolicy\\s*\\("]
+extract: enclosing-method-or-extension

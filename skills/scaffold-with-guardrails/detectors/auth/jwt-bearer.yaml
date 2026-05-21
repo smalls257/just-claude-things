@@ -1,0 +1,9 @@
+id: jwt-bearer
+display: JWT bearer authentication
+layer: auth
+priority: 80
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddJwtBearer\\s*\\("]
+extract: enclosing-method-or-extension
+notes: Adopts JwtBearerOptions wiring + JwtBearerDefaults scheme.
