@@ -305,3 +305,87 @@ def test_cli_exits_nonzero_when_file_missing(tmp_path):
     assert result.returncode != 0
     # User must see which file we couldn't find.
     assert str(missing) in result.stderr
+
+
+import pytest
+
+
+_ENDPOINTS_DESIGN = '''---
+slug: x
+---
+# X
+<module name="X">
+
+<contracts>
+
+### CreateOrderRequest
+
+- customerId: Guid
+- items: long
+
+### OrderResponse
+
+- id: Guid
+- status: string
+
+</contracts>
+
+<endpoints>
+
+### POST /orders
+
+- Request: CreateOrderRequest
+- Response: 201 OrderResponse
+- Auth: required
+
+### GET /orders/{id}
+
+- Response: 200 OrderResponse | 404
+
+</endpoints>
+
+</module>
+'''
+
+
+def test_endpoints_tag_emits_route_tasks():
+    """Bug B: parser must search <endpoints> per TECH-DESIGN-TAGS.md."""
+    result = phase2_parse.parse(_ENDPOINTS_DESIGN)
+    routes = [t for t in result["tasks"] if t["type"] == "route"]
+    assert len(routes) == 2
+
+    post = next(r for r in routes if r["method"] == "POST")
+    assert post["path"] == "/orders"
+    assert post["request"] == "CreateOrderRequest"
+    assert post["response"] == "OrderResponse"
+
+    get = next(r for r in routes if r["method"] == "GET")
+    assert get["path"] == "/orders/{id}"
+    assert get["request"] is None
+    assert get["response"] == "OrderResponse"
+
+
+def test_endpoints_bullet_unquoted_request_response():
+    """Bug B: Request:/Response: bullets without backticks must parse.
+    TECH-DESIGN-TAGS.md example at line 97-99 uses unquoted refs.
+    """
+    result = phase2_parse.parse(_ENDPOINTS_DESIGN)
+    routes = [t for t in result["tasks"] if t["type"] == "route"]
+    post = next(r for r in routes if r["method"] == "POST")
+    assert post["request"] == "CreateOrderRequest", (
+        "Bullet `- Request: CreateOrderRequest` without backticks must "
+        "still be picked up — the doc example uses this form."
+    )
+
+
+def test_routes_tag_raises_unknown_tag_error():
+    """Bug B: explicit `<routes>` (non-canonical) must fail loud, not produce
+    zero tasks silently. Drift in either direction surfaces immediately.
+    """
+    bad_design = _ENDPOINTS_DESIGN.replace("<endpoints>", "<routes>").replace(
+        "</endpoints>", "</routes>"
+    )
+    with pytest.raises(phase2_parse.ParseError) as excinfo:
+        phase2_parse.parse(bad_design)
+    assert "<routes>" in str(excinfo.value)
+    assert "<endpoints>" in str(excinfo.value)

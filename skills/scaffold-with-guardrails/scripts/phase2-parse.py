@@ -74,6 +74,14 @@ class ParseResult:
 
 
 def parse(markdown: str) -> dict:
+    # Bug B guard: `<routes>` is non-canonical. Per TECH-DESIGN-TAGS.md, the
+    # endpoint block is named `<endpoints>`. Fail loud here so a doc using
+    # the wrong tag does not silently produce zero route tasks.
+    if re.search(r"<routes>", markdown):
+        raise ParseError(
+            "UNKNOWN_TAG: <routes> is not canonical — use <endpoints> "
+            "per TECH-DESIGN-TAGS.md."
+        )
     slug = _extract_frontmatter_slug(markdown)
     modules = _extract_module_names(markdown)
     app_name_hint = modules[0] if len(modules) == 1 else ""
@@ -453,19 +461,21 @@ def _extract_route_tasks(markdown: str) -> list[dict]:
         r'<module\s+name="([^"]+)">(.*?)</module>', markdown, re.DOTALL
     ):
         module = mod_match.group(1)
-        routes_match = re.search(r"<routes>(.*?)</routes>", mod_match.group(2), re.DOTALL)
-        if not routes_match:
+        endpoints_match = re.search(r"<endpoints>(.*?)</endpoints>", mod_match.group(2), re.DOTALL)
+        if not endpoints_match:
             continue
         for h3 in re.finditer(
             r"^###\s+(\S+)\s+(\S+).*?(?=^###\s|\Z)",
-            routes_match.group(1),
+            endpoints_match.group(1),
             re.MULTILINE | re.DOTALL,
         ):
             method = h3.group(1)
             path = h3.group(2)
             chunk = h3.group(0)
-            request_match = re.search(r"Request:\s*`(\w+)`", chunk)
-            response_match = re.search(r"Response:\s*`(\w+)`", chunk)
+            # Accept both backtick-quoted (`Type`) and unquoted forms.
+            # TECH-DESIGN-TAGS.md example uses unquoted; older docs may quote.
+            request_match = re.search(r"Request:\s*`?(\w+)`?", chunk)
+            response_match = re.search(r"Response:\s*\d*\s*`?(\w+)`?", chunk)
             tasks.append({
                 "type": "route",
                 "module": module,

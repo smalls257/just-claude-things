@@ -104,7 +104,7 @@ unread → reading → completed | abandoned.
 
 </contracts>
 
-<routes>
+<endpoints>
 
 ### POST /authors
 
@@ -129,6 +129,6 @@ Response: `BookResponse`
 Request: `UpdateStatusRequest`
 Response: `BookResponse`
 
-</routes>
+</endpoints>
 
 </module>
