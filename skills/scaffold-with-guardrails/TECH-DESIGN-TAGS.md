@@ -127,3 +127,55 @@ The Phase-2 pre-check enforces:
 | Each `<entities>` H3 has SQL fence | "Entity X missing SQL CREATE TABLE block" |
 | `<endpoints>` Request/Response refs exist in `<contracts>` | "Endpoint X references undefined DTO Y" |
 | Cross-module ref uses primitive | "Field X.Y references cross-module entity Z; use ID instead" |
+
+## `<conventions>` block (Phase-1.5)
+
+After `<module>` blocks, the convention scan writes one `<conventions>` block
+capturing all adoption decisions:
+
+```xml
+<conventions
+    reference-repo="../canonical-api"
+    reference-repo-commit="a1b2c3d"
+    scanned-at="2026-05-20T14:32:00Z"
+    engine-version="0.1.0">
+
+  <adopted
+      detector="auth-jwt-bearer"
+      source="src/Auth/JwtExtensions.cs:L12-L45"
+      staged="staged/auth-jwt-bearer.cs"
+      packages="Microsoft.AspNetCore.Authentication.JwtBearer:8.0.5"/>
+
+  <rejected
+      detector="caching-redis"
+      source="src/Caching/RedisExtensions.cs:L8-L40"
+      reason="dev-skipped"/>
+
+  <dev-named
+      target="feature-flags"
+      source="src/Features/FlagExtensions.cs:L8-L30"
+      staged="staged/dev-feature-flags.cs"
+      adopted="true"
+      packages="LaunchDarkly.ServerSdk:8.2.1"/>
+
+  <discovered
+      name="correlation-middleware"
+      source="src/Mw/CorrelationMw.cs:L1-L60"
+      staged="staged/discovered-correlation-middleware.cs"
+      adopted="true"
+      packages=""/>
+
+  <conflict
+      winner="auth-jwt-bearer"
+      loser="httpclient-token-handler"
+      overlap="src/Auth/JwtExtensions.cs:L50-L55"/>
+</conventions>
+```
+
+**Field invariants:**
+- `staged` paths are relative to `.scaffold/`
+- `packages` is comma-separated `name:version` (Phase-2 cascade reads this)
+- `reference-repo-commit` lets Phase-2 detect drift since scan
+- `engine-version` lets future skill versions detect old block schemas
+- `<rejected>` entries are kept (not deleted) so re-runs default to previous
+  decision
