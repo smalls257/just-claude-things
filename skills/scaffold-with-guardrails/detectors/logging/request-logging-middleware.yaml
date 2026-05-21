@@ -1,0 +1,8 @@
+id: request-logging-middleware
+display: HTTP request logging middleware
+layer: logging
+priority: 60
+files: ["src/**/*.cs"]
+signal:
+  cs: ["UseSerilogRequestLogging\\s*\\(", "UseHttpLogging\\s*\\("]
+extract: enclosing-method-or-extension

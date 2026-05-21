@@ -1,0 +1,8 @@
+id: serilog
+display: Serilog logger wiring
+layer: logging
+priority: 80
+files: ["src/**/*.cs"]
+signal:
+  cs: ["UseSerilog\\s*\\(", "Log\\.Logger\\s*="]
+extract: enclosing-method-or-extension

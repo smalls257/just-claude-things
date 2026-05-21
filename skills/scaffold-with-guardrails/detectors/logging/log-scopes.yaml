@@ -1,0 +1,8 @@
+id: log-scopes
+display: Logger BeginScope usage
+layer: logging
+priority: 40
+files: ["src/**/*.cs"]
+signal:
+  cs: ["\\.BeginScope\\s*\\("]
+extract: enclosing-method
