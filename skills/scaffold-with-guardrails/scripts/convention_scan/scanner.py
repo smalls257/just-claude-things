@@ -26,6 +26,8 @@ def _ext_of(path: Path) -> str:
     name = path.name.lower()
     if name.endswith(".props"):
         return "props"
+    if name == ".editorconfig":
+        return "editorconfig"
     return path.suffix.lstrip(".")
 
 

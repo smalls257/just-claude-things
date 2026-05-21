@@ -1,0 +1,8 @@
+id: global-json
+display: global.json SDK pinning
+layer: build
+priority: 70
+files: ["**/global.json"]
+signal:
+  json: ["\"sdk\"\\s*:"]
+extract: appsettings-section

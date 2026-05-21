@@ -1,0 +1,8 @@
+id: editorconfig
+display: .editorconfig formatting rules
+layer: build
+priority: 70
+files: ["**/.editorconfig"]
+signal:
+  editorconfig: ["root\\s*=\\s*true", "dotnet_diagnostic\\."]
+extract: line-range:5

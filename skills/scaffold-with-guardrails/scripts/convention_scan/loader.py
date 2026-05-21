@@ -77,7 +77,7 @@ def _parse_one(path: Path) -> Detector:
 
     files = tuple(raw["files"])
     signal_raw = raw["signal"] or {}
-    needed_exts = {ext for ext in ("cs", "json", "props") if any(ext in g for g in files)}
+    needed_exts = {ext for ext in ("cs", "json", "props", "editorconfig") if any(ext in g for g in files)}
     for ext in needed_exts:
         if ext not in signal_raw or not signal_raw[ext]:
             raise RegistryError(f"MISSING_SIGNAL: {path}: signal.{ext} required for files={files}")
