@@ -1,0 +1,8 @@
+id: idistributedcache-redis
+display: Redis-backed IDistributedCache
+layer: caching
+priority: 60
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddStackExchangeRedisCache\\s*\\("]
+extract: enclosing-method-or-extension

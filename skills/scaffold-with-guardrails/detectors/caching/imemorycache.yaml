@@ -1,0 +1,8 @@
+id: imemorycache
+display: IMemoryCache registration
+layer: caching
+priority: 50
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddMemoryCache\\s*\\("]
+extract: enclosing-method-or-extension
