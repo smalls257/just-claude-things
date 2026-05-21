@@ -37,3 +37,15 @@ Nothing else.
 You may propose completion only when every branch the conversation opened has
 been closed, every section in your output template has content, and the neg-audit
 passes. See `NEG-AUDIT.md`.
+
+### Phase-1.5 — Reference repo
+
+> Q: Path to a canonical reference repo whose conventions we should harvest?
+> (relative or absolute; leave blank to skip the convention scan)
+
+The reference repo should be **separate** from the target — scanning the
+target's own templates is forbidden (Forensic Coding dodge).
+
+If supplied, Phase-1.5 will scan its `src/` tree, surface dev-reviewable
+cards per detector, and persist adoption decisions in the tech-design's
+`<conventions>` block. See `CONVENTION-SCAN.md` for the full UX.
