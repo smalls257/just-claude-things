@@ -7,7 +7,8 @@ public static class SerilogConfig
     {
         Log.Logger = new LoggerConfiguration()
             .Enrich.FromLogContext()
+            .WriteTo.Console()
             .CreateLogger();
-        builder.Logging.ClearProviders();
+        builder.Host.UseSerilog();
     }
 }
