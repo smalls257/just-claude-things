@@ -828,3 +828,29 @@ the initial scaffold:
 - Phase-2 OVERWRITES generated files. Commit your work before
   re-invoking Phase-2.
 
+## Convention slot markers
+
+`Program.cs` carries one `// {{CONVENTION:<layer>}}` marker per layer that
+the convention graft step can populate. The grafter replaces the marker line
+with the adopted snippet (or a stub comment if nothing was adopted).
+
+Layer-to-marker mapping in `Program.cs`:
+
+| Marker | Where in Program.cs | Source of snippet |
+|---|---|---|
+| `// {{CONVENTION:logging}}` | Before `builder.Build()` | `staged/<logging-id>.cs` |
+| `// {{CONVENTION:observability}}` | Before `builder.Build()` | `staged/<observability-id>.cs` |
+| `// {{CONVENTION:auth}}` | Before `builder.Build()` | `staged/<auth-id>.cs` |
+| `// {{CONVENTION:data}}` | Before `builder.Build()` | `staged/<data-id>.cs` |
+| `// {{CONVENTION:http-outbound}}` | Before `builder.Build()` | `staged/<http-outbound-id>.cs` |
+| `// {{CONVENTION:middleware}}` | After `builder.Build()`, before `app.Run()` | `staged/<middleware-id>.cs` |
+| `// {{CONVENTION:dev-<target>}}` | Required when scan produced an adopted dev-named entry | `staged/dev-<target>.cs` |
+| `// {{CONVENTION:discovered-<name>}}` | Required when scan produced an adopted discovered entry | `staged/discovered-<name>.cs` |
+
+If a marker is missing for a layer that has an adopted entry, the graft step
+halts with `NO_SLOT`. Add the marker to the template and re-run Phase-2.
+
+Stub templates live under `templates/csharp/snippets/<layer>.stub.cs` and
+contain an informational comment inserted when no scan adoption exists for
+the layer.
+
