@@ -100,3 +100,84 @@ def test_line_range_fallback(tmp_path):
     region = extract(p, 10, "line-range:3")
     # 3 above + 1 hit + 3 below = 7 lines → end-start == 6
     assert region.end_line - region.start_line == 6
+
+
+CS_WITH_FILE_USINGS = """using Serilog;
+using Foo.Bar;  // inline comment also tolerated
+
+namespace App.Logging;
+
+public static class SerilogConfig
+{
+    public static void Configure(WebApplicationBuilder builder)
+    {
+        Log.Logger = new LoggerConfiguration().CreateLogger();
+    }
+}
+"""
+
+
+def test_extract_preserves_file_level_usings_in_snippet(tmp_path):
+    """Bug A root cause: extractor must include file-level using directives
+    in the extracted snippet so the grafter can preserve them in the host
+    file. Without this, the grafter's preservation logic never sees usings
+    in the real convention-scan flow."""
+    p = write(tmp_path, "Log.cs", CS_WITH_FILE_USINGS)
+    # hit line 6 = body of Configure (the Log.Logger assignment is on line 9)
+    region = extract(p, 6, "enclosing-method-or-extension")
+    # File-level usings preserved at top of snippet text
+    assert "using Serilog;" in region.text
+    assert "using Foo.Bar;" in region.text
+    # Class block still present
+    assert "public static class SerilogConfig" in region.text
+    # Source line numbers anchor at the class block, not the using line
+    assert region.start_line >= 6
+
+
+def test_extract_handles_file_with_no_usings(tmp_path):
+    """Files without file-level usings still extract correctly — the
+    collect helper returns empty and the snippet shape is unchanged."""
+    body = "namespace App.X;\n\npublic class Y\n{\n    public void Do() {}\n}\n"
+    p = write(tmp_path, "Y.cs", body)
+    region = extract(p, 5, "enclosing-method")
+    assert "public void Do()" in region.text
+    # No spurious blank lines or `using` lines at top
+    assert not region.text.lstrip().startswith("using ")
+
+
+def test_extract_stops_using_collection_at_first_non_using(tmp_path):
+    """Once the file leaves the using preamble (namespace, blank, class),
+    further `using` directives inside the body are NOT prepended to the
+    snippet (they would land inside the body where they were captured
+    naturally by the body extraction)."""
+    body = """using A;
+
+namespace App;
+
+public class X
+{
+    public void Do()
+    {
+        // using B; is a comment, not a directive
+    }
+}
+"""
+    p = write(tmp_path, "X.cs", body)
+    region = extract(p, 7, "enclosing-method")
+    assert "using A;" in region.text  # file-level preamble preserved
+    # The body itself does not contain a spurious second "using A;"
+    assert region.text.count("using A;") == 1
+
+
+def test_extract_collect_file_usings_helper_direct():
+    """Direct test of the collect helper."""
+    from convention_scan.extractor import _collect_file_usings
+    body = "using A;\nusing B;  // comment\n\nnamespace X;\n\nclass Y {}\n"
+    assert _collect_file_usings(body) == ["using A;", "using B;  // comment"]
+
+    # File with no usings
+    assert _collect_file_usings("namespace X;\nclass Y {}\n") == []
+
+    # File where the first line is a comment then usings — the helper
+    # tolerates leading blank-or-comment lines? No: stops on first non-blank-non-using.
+    assert _collect_file_usings("// header comment\nusing A;\n") == []

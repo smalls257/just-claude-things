@@ -80,6 +80,32 @@ def _line_of(text: str, idx: int) -> int:
 
 _CLASS_DECL_RE = re.compile(r"\b(?:class|struct|record|interface)\s+\w+")
 
+# Bug A root cause fix: file-level using directives must travel with the
+# extracted class/method snippet so the grafter can preserve them in the
+# host file. Without this, `using Serilog;` is stripped here and the
+# grafter's preservation logic never sees it in real e2e flow.
+_FILE_USING_RE = re.compile(r"^\s*using\s+[A-Za-z0-9_.]+\s*;(?:\s*//.*)?\s*$")
+
+
+def _collect_file_usings(text: str) -> list[str]:
+    """Capture `using X;` lines from the top of the file.
+
+    Scans line-by-line. Each line matching `_FILE_USING_RE` is captured
+    (preserving its original whitespace + any trailing `// comment`).
+    The first non-blank-non-using line ends the scan — subsequent
+    using directives inside the body are NOT captured (those belong
+    where they live in the body, if any).
+    """
+    out: list[str] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue  # blank — keep scanning
+        if _FILE_USING_RE.match(line):
+            out.append(line.rstrip("\r\n"))
+            continue
+        break  # first non-blank-non-using line ends the preamble
+    return out
+
 
 def _line_bounds(text: str, hit_line: int) -> tuple[int, int]:
     """Return (line_start_idx, line_end_idx_exclusive) for the 1-indexed hit_line."""
@@ -116,11 +142,17 @@ def _resolve_inner_block(text: str, hit_line: int) -> tuple[int, int]:
 
 def _extract_cs(text: str, hit_line: int, mode: str) -> tuple[int, int, str]:
     inner_open, inner_close = _resolve_inner_block(text, hit_line)
+    file_usings = _collect_file_usings(text)
+
+    def _with_usings(snippet: str) -> str:
+        if not file_usings:
+            return snippet
+        return "\n".join(file_usings) + "\n\n" + snippet
 
     if mode == "enclosing-method":
         start = _header_start(text, inner_open)
         snippet = text[start: inner_close + 1]
-        return _line_of(text, start), _line_of(text, inner_close), snippet
+        return _line_of(text, start), _line_of(text, inner_close), _with_usings(snippet)
 
     if mode == "enclosing-class":
         # Three shapes to handle:
@@ -140,7 +172,7 @@ def _extract_cs(text: str, hit_line: int, mode: str) -> tuple[int, int, str]:
             header = text[header_start:cur_open]
             if _CLASS_DECL_RE.search(header):
                 snippet = text[header_start: cur_close + 1]
-                return _line_of(text, header_start), _line_of(text, cur_close), snippet
+                return _line_of(text, header_start), _line_of(text, cur_close), _with_usings(snippet)
             try:
                 cur_open, cur_close = _balance(text, cur_open - 1)
             except ExtractError:
@@ -150,21 +182,21 @@ def _extract_cs(text: str, hit_line: int, mode: str) -> tuple[int, int, str]:
         # the dev review card surfaces the issue.
         header_start = _header_start(text, inner_open)
         snippet = text[header_start: inner_close + 1]
-        return _line_of(text, header_start), _line_of(text, inner_close), snippet
+        return _line_of(text, header_start), _line_of(text, inner_close), _with_usings(snippet)
 
     if mode == "enclosing-method-or-extension":
         try:
             outer_open, outer_close = _balance(text, inner_open - 1)
         except ExtractError:
             start = _header_start(text, inner_open)
-            return _line_of(text, start), _line_of(text, inner_close), text[start: inner_close + 1]
+            return _line_of(text, start), _line_of(text, inner_close), _with_usings(text[start: inner_close + 1])
         outer_header_start = _header_start(text, outer_open)
         outer_header = text[outer_header_start:outer_open]
         if "static class" in outer_header:
             snippet = text[outer_header_start: outer_close + 1]
-            return _line_of(text, outer_header_start), _line_of(text, outer_close), snippet
+            return _line_of(text, outer_header_start), _line_of(text, outer_close), _with_usings(snippet)
         start = _header_start(text, inner_open)
-        return _line_of(text, start), _line_of(text, inner_close), text[start: inner_close + 1]
+        return _line_of(text, start), _line_of(text, inner_close), _with_usings(text[start: inner_close + 1])
 
     raise ExtractError(f"UNKNOWN_MODE: {mode}")
 
