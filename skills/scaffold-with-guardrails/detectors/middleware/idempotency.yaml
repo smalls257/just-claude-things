@@ -1,0 +1,8 @@
+id: idempotency
+display: Idempotency key middleware
+layer: middleware
+priority: 40
+files: ["src/**/*.cs"]
+signal:
+  cs: ["class\\s+\\w*Idempotency\\w*Middleware", "Idempotency-Key"]
+extract: enclosing-class

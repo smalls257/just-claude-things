@@ -1,0 +1,8 @@
+id: exception-handler
+display: Global exception handler middleware
+layer: middleware
+priority: 70
+files: ["src/**/*.cs"]
+signal:
+  cs: ["UseExceptionHandler\\s*\\(", "AddExceptionHandler\\s*<"]
+extract: enclosing-method-or-extension

@@ -1,0 +1,8 @@
+id: validation-pipeline
+display: FluentValidation pipeline
+layer: middleware
+priority: 50
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddFluentValidation\\s*\\(", "AddValidatorsFromAssembly"]
+extract: enclosing-method-or-extension

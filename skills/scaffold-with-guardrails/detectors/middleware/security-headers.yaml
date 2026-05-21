@@ -1,0 +1,8 @@
+id: security-headers
+display: Security headers middleware
+layer: middleware
+priority: 50
+files: ["src/**/*.cs"]
+signal:
+  cs: ["UseSecurityHeaders\\s*\\(", "X-Content-Type-Options"]
+extract: enclosing-method-or-extension

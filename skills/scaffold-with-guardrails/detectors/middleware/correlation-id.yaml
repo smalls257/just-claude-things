@@ -1,0 +1,8 @@
+id: correlation-id
+display: Correlation-ID middleware
+layer: middleware
+priority: 60
+files: ["src/**/*.cs"]
+signal:
+  cs: ["class\\s+\\w*Correlation\\w*Middleware", "X-Correlation-ID"]
+extract: enclosing-class
