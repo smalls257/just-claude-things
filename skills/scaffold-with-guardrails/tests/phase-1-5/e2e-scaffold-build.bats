@@ -39,21 +39,26 @@ teardown() {
 }
 
 @test "e2e: convention scan + graft + dotnet build = green" {
-  # Step 1: run convention scan. The single Serilog card gets adopted (`y`);
-  # all other detectors return NO_MATCH against the minimal reference repo.
-  # The scan's prompter reads stdin one answer per card.
+  # Step 1: run convention scan. Two cards are adopted: Serilog (logging)
+  # and CorrelationId middleware — the middleware uses a braceless `if`
+  # which is the X6 trigger. Two `y` answers, one per card.
   run bash "$SKILL_ROOT/scripts/convention-scan.sh" \
     --reference-repo "$REF" \
     --target-repo "$TARGET" \
-    --design "$TARGET/docs/tech-design/x.md" <<< "y"
+    --design "$TARGET/docs/tech-design/x.md" <<EOF
+y
+y
+EOF
   [ "$status" -eq 0 ]
 
-  # Sanity check: conventions block was rewritten with the adopted decision.
+  # Sanity check: conventions block was rewritten with both adopted decisions.
   grep -q 'detector="serilog"' "$TARGET/docs/tech-design/x.md"
   [ -f "$TARGET/.scaffold/staged/serilog.cs" ]
   grep -q "using Serilog;" "$TARGET/.scaffold/staged/serilog.cs"
+  grep -q 'detector="correlation-id"' "$TARGET/docs/tech-design/x.md"
+  [ -f "$TARGET/.scaffold/staged/correlation-id.cs" ]
 
-  # Step 2: graft.
+  # Step 2: graft (dotnet format runs automatically after graft to fix X6).
   run python3 "$SKILL_ROOT/scripts/phase2_graft.py" \
     --design "$TARGET/docs/tech-design/x.md" \
     --target-program "$TARGET/src/MyApp.Api/Program.cs" \
@@ -63,14 +68,20 @@ teardown() {
     --cpm "$TARGET/Directory.Packages.props"
   [ "$status" -eq 0 ]
 
-  # Sanity check: host file was written, Program.cs got reverse-using.
+  # Sanity check: Serilog host file and Program.cs wiring.
   [ -f "$TARGET/src/MyApp.Api/Logging/SerilogConfig.cs" ]
   grep -q "using Serilog;" "$TARGET/src/MyApp.Api/Logging/SerilogConfig.cs"
   grep -q "using MyApp.Api.Logging;" "$TARGET/src/MyApp.Api/Program.cs"
 
+  # Sanity check: CorrelationId middleware host file and Program.cs wiring.
+  # X6 gate: if dotnet format failed to add braces, IDE0011 will fire below.
+  [ -f "$TARGET/src/MyApp.Api/Middleware/CorrelationIdMiddleware.cs" ]
+  grep -q "using MyApp.Api.Middleware;" "$TARGET/src/MyApp.Api/Program.cs"
+  grep -q "app.UseMiddleware<CorrelationIdMiddleware>" "$TARGET/src/MyApp.Api/Program.cs"
+
   # Step 3: dotnet build the target. This is the X-class catch — if any
   # generated file is malformed (wrong XML, wrong namespace, missing
-  # using, bad marker position), build fails here.
+  # using, bad marker position, or braceless `if` under TWAE), build fails here.
   run env -u DOTNET_CLI_TELEMETRY_OPTOUT dotnet build "$TARGET/MyApp.sln" --nologo
   if [ "$status" -ne 0 ]; then
     echo "----------------------------------------"
@@ -83,8 +94,11 @@ teardown() {
     echo "Generated Directory.Packages.props:"
     cat "$TARGET/Directory.Packages.props"
     echo "----------------------------------------"
-    echo "Generated host file:"
+    echo "Generated Serilog host file:"
     cat "$TARGET/src/MyApp.Api/Logging/SerilogConfig.cs"
+    echo "----------------------------------------"
+    echo "Generated CorrelationId host file (X6 trigger):"
+    cat "$TARGET/src/MyApp.Api/Middleware/CorrelationIdMiddleware.cs"
   fi
   [ "$status" -eq 0 ]
 }

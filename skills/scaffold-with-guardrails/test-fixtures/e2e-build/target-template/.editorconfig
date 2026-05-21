@@ -1,0 +1,6 @@
+root = true
+
+[*.cs]
+# Enforce braces on all control flow — violations promoted to error via TWAE.
+dotnet_diagnostic.IDE0011.severity = warning
+csharp_prefer_braces = true:warning

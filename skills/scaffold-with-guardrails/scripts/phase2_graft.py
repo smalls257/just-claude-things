@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -488,6 +490,37 @@ def _target_root_of(program: Path) -> Path:
     return program.parent.parent
 
 
+def _format_target_project(target_root: Path, app_name: str) -> None:
+    """Bug X6: run `dotnet format` on the target Api project after graft.
+
+    Convention snippets come from a reference repo that may use different
+    formatting (braceless `if`, single-line lambdas, etc.) than the target.
+    Under `TreatWarningsAsErrors=true`, the target's `.editorconfig` may
+    promote IDE0011/IDE0058 to errors; the grafted snippet then fails to
+    build. Running `dotnet format` once after all grafts reconciles style
+    against the target's rules.
+
+    Bounded to the Api csproj to keep runtime tolerable. Silently skips
+    if `dotnet` is not on PATH (CI without .NET, unit tests).
+    """
+    if shutil.which("dotnet") is None:
+        print("WARN: dotnet not on PATH — skipping post-graft format", file=sys.stderr)
+        return
+    csproj = target_root / "src" / f"{app_name}.Api" / f"{app_name}.Api.csproj"
+    if not csproj.exists():
+        print(f"WARN: csproj not found at {csproj} — skipping post-graft format", file=sys.stderr)
+        return
+    result = subprocess.run(
+        ["dotnet", "format", str(csproj), "--no-restore"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"WARN: dotnet format exited {result.returncode}", file=sys.stderr)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--design", required=True)
@@ -496,6 +529,7 @@ def main():
     p.add_argument("--cpm")
     p.add_argument("--target-root", help="repo root where src/<App>.Api/... lives; inferred from --target-program when omitted")
     p.add_argument("--app-name", help="App name (defaults to dirname of Program.cs minus .Api suffix)")
+    p.add_argument("--no-format", action="store_true", help="Skip post-graft `dotnet format` (use for tests without .NET on PATH)")
     args = p.parse_args()
 
     result = parse_design(Path(args.design))
@@ -543,6 +577,10 @@ def main():
                           target_root, app_name)
 
     program.write_text(body)
+
+    if not args.no_format:
+        _format_target_project(target_root, app_name)
+
     print("GRAFT_OK", file=sys.stderr)
 
 

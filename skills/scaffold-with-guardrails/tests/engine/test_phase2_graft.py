@@ -348,3 +348,43 @@ def test_ensure_csproj_reference_creates_itemgroup_if_missing(tmp_path):
     body = csproj.read_text()
     assert "<ItemGroup>" in body
     assert '<PackageReference Include="Serilog"' in body
+
+
+def test_format_target_project_invokes_dotnet_format(tmp_path, monkeypatch):
+    """Bug X6: graft must run `dotnet format` on the Api project after
+    touching files so target editorconfig style is enforced — references
+    may have braceless ifs the target rejects under TWAE."""
+    from phase2_graft import _format_target_project
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        class R:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return R()
+    monkeypatch.setattr("subprocess.run", fake_run)
+    # Create the expected csproj path so the function can target it.
+    (tmp_path / "src" / "MyApp.Api").mkdir(parents=True)
+    (tmp_path / "src" / "MyApp.Api" / "MyApp.Api.csproj").write_text("<Project/>")
+
+    _format_target_project(tmp_path, "MyApp")
+
+    assert len(calls) == 1
+    assert calls[0][0] == "dotnet"
+    assert "format" in calls[0]
+    # The Api csproj is the format target.
+    args_joined = " ".join(calls[0])
+    assert "MyApp.Api.csproj" in args_joined
+
+
+def test_format_target_project_skips_when_dotnet_missing(tmp_path, monkeypatch):
+    """If `dotnet` is not on PATH, log a warning and skip — don't crash."""
+    from phase2_graft import _format_target_project
+    calls = []
+    monkeypatch.setattr("subprocess.run", lambda *a, **kw: calls.append(a))
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    _format_target_project(tmp_path, "MyApp")
+
+    assert calls == []  # no subprocess call
