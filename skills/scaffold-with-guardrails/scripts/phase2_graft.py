@@ -33,7 +33,8 @@ def _read_yaml_layer(yaml_path: Path) -> str | None:
         import yaml
         data = yaml.safe_load(yaml_path.read_text())
         return data.get("layer") if isinstance(data, dict) else None
-    except Exception:
+    except Exception as e:
+        print(f"WARN: could not read layer from {yaml_path}: {e}", file=sys.stderr)
         return None
 
 
