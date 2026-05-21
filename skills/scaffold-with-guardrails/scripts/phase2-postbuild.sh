@@ -22,6 +22,36 @@
 #   2 — APP_NAME or MODULES unset (contract violation by caller)
 set -uo pipefail
 
+# --check-grafts mode: verify every <adopted> in design produced a // SOURCE: line
+if [[ "${1:-}" == "--check-grafts" ]]; then
+  shift
+  DESIGN=""
+  PROGRAM=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --design) DESIGN="$2"; shift 2 ;;
+      --target-program) PROGRAM="$2"; shift 2 ;;
+      *) echo "UNKNOWN_ARG: $1" >&2; exit 2 ;;
+    esac
+  done
+  [[ -z "$DESIGN" || -z "$PROGRAM" ]] && { echo "USAGE: --check-grafts --design D --target-program P" >&2; exit 2; }
+
+  # Parse adopted detector ids from design (one per <adopted> tag)
+  ids=$(grep -oE 'detector="[^"]+"' "$DESIGN" | sed 's/detector="\([^"]*\)"/\1/')
+
+  missing=0
+  while IFS= read -r id; do
+    [[ -z "$id" ]] && continue
+    if ! grep -q "// SOURCE: adopted:$id" "$PROGRAM"; then
+      echo "GRAFT_MISSING: adopted:$id has no // SOURCE: line in $PROGRAM" >&2
+      missing=1
+    fi
+  done <<< "$ids"
+  [[ "$missing" -eq 0 ]] || exit 1
+  echo "GRAFTS_OK" >&2
+  exit 0
+fi
+
 if [ -z "${APP_NAME:-}" ] || [ -z "${MODULES:-}" ]; then
   echo "ERROR: APP_NAME and MODULES env vars must be set (orchestrator Step G4 should pass them; see scaffold-phase-2.md)" >&2
   exit 2
