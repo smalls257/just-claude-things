@@ -307,6 +307,161 @@ def test_cli_exits_nonzero_when_file_missing(tmp_path):
     assert str(missing) in result.stderr
 
 
+def test_enum_dedup_case_insensitive():
+    """Bug D: explicit `Open/Returned` + implicit `'open','returned'` → one task.
+    Case differences must not defeat dedup.
+    """
+    design = '''---
+slug: x
+---
+<module name="X">
+
+<entities>
+
+### Loan
+
+```sql
+CREATE TABLE loans (
+  id UUID PRIMARY KEY,
+  status TEXT NOT NULL CHECK (status IN ('open','returned'))
+);
+```
+
+**Invariants:** none.
+</entities>
+
+<enums>
+
+### LoanStatus
+
+- Open
+- Returned
+
+</enums>
+</module>
+'''
+    result = phase2_parse.parse(design)
+    enums = [t for t in result["tasks"] if t["type"] == "enum"]
+    assert len(enums) == 1
+    assert enums[0]["name"] == "LoanStatus"
+
+
+def test_enum_dedup_explicit_superset():
+    """Bug D: explicit values may be a SUPERSET of CHECK IN constraint
+    (declared states beyond what SQL currently enforces). Dedup must hold."""
+    design = '''---
+slug: x
+---
+<module name="X">
+
+<entities>
+
+### Loan
+
+```sql
+CREATE TABLE loans (
+  id UUID PRIMARY KEY,
+  status TEXT NOT NULL CHECK (status IN ('open','returned'))
+);
+```
+
+**Invariants:** none.
+</entities>
+
+<enums>
+
+### LoanStatus
+
+- Open
+- Returned
+- Lost
+
+</enums>
+</module>
+'''
+    result = phase2_parse.parse(design)
+    enums = [t for t in result["tasks"] if t["type"] == "enum"]
+    assert len(enums) == 1
+    assert enums[0]["name"] == "LoanStatus"
+    assert "Lost" in enums[0]["values"]
+
+
+def test_enum_no_dedup_when_disjoint():
+    """Bug D: if the value-sets share nothing, both enums emit."""
+    design = '''---
+slug: x
+---
+<module name="X">
+
+<entities>
+
+### Loan
+
+```sql
+CREATE TABLE loans (
+  id UUID PRIMARY KEY,
+  status TEXT NOT NULL CHECK (status IN ('open','returned'))
+);
+```
+
+**Invariants:** none.
+</entities>
+
+<enums>
+
+### Priority
+
+- Low
+- High
+
+</enums>
+</module>
+'''
+    result = phase2_parse.parse(design)
+    enums = [t for t in result["tasks"] if t["type"] == "enum"]
+    assert len(enums) == 2
+    names = sorted(e["name"] for e in enums)
+    assert names == ["LoanStatus", "Priority"]
+
+
+def test_enum_dedup_logs_drop_to_stderr(capsys):
+    """Bug D: when an implicit is dropped, log to stderr — Sensor for
+    auditing what the dedup pass suppressed."""
+    design = '''---
+slug: x
+---
+<module name="X">
+
+<entities>
+
+### Loan
+
+```sql
+CREATE TABLE loans (
+  id UUID PRIMARY KEY,
+  status TEXT NOT NULL CHECK (status IN ('open','returned'))
+);
+```
+
+**Invariants:** none.
+</entities>
+
+<enums>
+
+### LoanStatus
+
+- Open
+- Returned
+
+</enums>
+</module>
+'''
+    phase2_parse.parse(design)
+    captured = capsys.readouterr()
+    assert "dropped implicit enum" in captured.err
+    assert "LoanStatus" in captured.err
+
+
 import pytest
 
 

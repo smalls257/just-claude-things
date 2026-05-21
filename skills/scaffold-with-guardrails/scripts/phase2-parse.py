@@ -457,13 +457,36 @@ def _extract_enum_tasks(markdown: str) -> list[dict]:
                         "values": values,
                     })
 
-    # Dedup: implicit enum whose value-set matches an explicit one is dropped.
-    # Explicit declarations are canonical; CHECK IN is enforcement, not a new type.
-    explicit_value_sets = {(e["module"], frozenset(e["values"])) for e in explicit}
-    deduped_implicit = [
-        i for i in implicit
-        if (i["module"], frozenset(i["values"])) not in explicit_value_sets
-    ]
+    # Bug D: widen the dedup rule. Implicit enum (from SQL CHECK IN) is dropped
+    # when an explicit enum in the same module has a value-set that overlaps
+    # in either direction (superset OR subset, case-insensitive). The explicit
+    # declaration is canonical; the SQL CHECK IN is enforcement, not a new
+    # type. Previously required exact case-sensitive match — drift bypassed
+    # the dedup and duplicate enums emitted.
+    def _norm_set(vs):
+        return frozenset(v.lower() for v in vs)
+
+    explicit_by_module: dict[str, list[dict]] = {}
+    for e in explicit:
+        explicit_by_module.setdefault(e["module"], []).append(e)
+
+    deduped_implicit = []
+    for i in implicit:
+        i_vals = _norm_set(i["values"])
+        peers = explicit_by_module.get(i["module"], [])
+        covering = None
+        for e in peers:
+            e_vals = _norm_set(e["values"])
+            if i_vals <= e_vals or e_vals <= i_vals:
+                covering = e
+                break
+        if covering is not None:
+            print(
+                f"INFO: dropped implicit enum '{i['name']}' — covered by explicit '{covering['name']}' in module '{i['module']}'",
+                file=sys.stderr,
+            )
+            continue
+        deduped_implicit.append(i)
     return explicit + deduped_implicit
 
 
