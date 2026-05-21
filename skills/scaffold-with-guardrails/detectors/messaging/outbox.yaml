@@ -1,0 +1,8 @@
+id: outbox
+display: Transactional outbox pattern
+layer: messaging
+priority: 60
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddEntityFrameworkOutbox\\s*<", "OutboxMessage"]
+extract: enclosing-method-or-extension
