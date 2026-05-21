@@ -1,1 +1,1 @@
-// TODO: configure observability (no convention scan adoption)
+// Convention slot not populated from scan — configure observability manually.

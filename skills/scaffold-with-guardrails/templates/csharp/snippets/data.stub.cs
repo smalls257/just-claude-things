@@ -1,1 +1,1 @@
-// TODO: configure data access (no convention scan adoption)
+// Convention slot not populated from scan — configure data access manually.

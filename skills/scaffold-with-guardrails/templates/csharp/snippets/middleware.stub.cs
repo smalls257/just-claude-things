@@ -1,1 +1,1 @@
-// TODO: configure middleware pipeline (no convention scan adoption)
+// Convention slot not populated from scan — configure middleware pipeline manually.

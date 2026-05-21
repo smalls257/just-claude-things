@@ -1,1 +1,1 @@
-// TODO: configure authentication (no convention scan adoption)
+// Convention slot not populated from scan — configure authentication manually.

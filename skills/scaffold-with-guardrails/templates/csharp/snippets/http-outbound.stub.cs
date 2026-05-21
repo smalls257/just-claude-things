@@ -1,1 +1,1 @@
-// TODO: configure HTTP outbound clients (no convention scan adoption)
+// Convention slot not populated from scan — configure HTTP outbound clients manually.
