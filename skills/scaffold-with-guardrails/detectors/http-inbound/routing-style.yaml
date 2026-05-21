@@ -1,0 +1,8 @@
+id: routing-style
+display: Routing style (controllers vs minimal API)
+layer: http-inbound
+priority: 70
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddControllers\\s*\\(", "MapControllers\\s*\\(", "app\\.MapGet\\s*\\(", "app\\.MapPost\\s*\\("]
+extract: enclosing-method-or-extension

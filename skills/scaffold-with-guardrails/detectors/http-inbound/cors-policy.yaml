@@ -1,0 +1,8 @@
+id: cors-policy
+display: CORS policy registration
+layer: http-inbound
+priority: 50
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddCors\\s*\\(", "UseCors\\s*\\("]
+extract: enclosing-method-or-extension
