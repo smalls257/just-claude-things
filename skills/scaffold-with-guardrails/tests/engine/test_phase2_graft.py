@@ -229,3 +229,32 @@ var builder = WebApplication.CreateBuilder(args);
 '''
     out = _ensure_program_using(program, "Lib.Api.Logging")
     assert out.count("using Lib.Api.Logging;") == 1
+
+
+def test_ensure_program_using_preserves_crlf_line_endings():
+    """Bug A: Windows-checkout Program.cs may use CRLF. The inserted
+    using must match the existing usings' line-ending style, not mix LF
+    and CRLF."""
+    from phase2_graft import _ensure_program_using
+    program = "using System;\r\nusing Microsoft.AspNetCore.Builder;\r\n\r\nvar builder = WebApplication.CreateBuilder(args);\r\n"
+    out = _ensure_program_using(program, "Lib.Api.Logging")
+    # The inserted line should end with CRLF, not LF.
+    assert "using Lib.Api.Logging;\r\n" in out
+    # No mixed-ending line for the new using.
+    assert "using Lib.Api.Logging;\n" not in out.replace("\r\n", "")
+
+
+def test_extract_snippet_usings_tolerates_inline_comments():
+    """Bug A: snippet usings may have trailing `// comment` documentation.
+    They must still be captured."""
+    from phase2_graft import _extract_snippet_usings
+    snippet = '''using Serilog;  // for structured logging
+using Foo.Bar;  // utility
+
+public class X { }
+'''
+    result = _extract_snippet_usings(snippet)
+    assert result == [
+        "using Serilog;  // for structured logging",
+        "using Foo.Bar;  // utility",
+    ]

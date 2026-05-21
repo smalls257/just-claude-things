@@ -172,6 +172,11 @@ _DEFAULT_USINGS = (
 # names one of these as its first segment, emit a `// TODO NUGET: <root>`
 # comment so the dev sees the package gap. Not exhaustive — additions are
 # safe but missing entries only cost a comment, not correctness.
+#
+# Entries here are not required to have matching pins in
+# Directory.Packages.props. The TODO is a *breadcrumb* that the dev must
+# act on (add the package, picking the right one for their needs);
+# auto-installing a guessed package would be a Silent Fallback.
 _KNOWN_THIRD_PARTY_ROOTS = frozenset({
     "Serilog",
     "MassTransit",
@@ -184,7 +189,7 @@ _KNOWN_THIRD_PARTY_ROOTS = frozenset({
 })
 
 
-_USING_RE = re.compile(r"^\s*using\s+[A-Za-z0-9_.]+\s*;\s*$")
+_USING_RE = re.compile(r"^\s*using\s+[A-Za-z0-9_.]+\s*;(?:\s*//.*)?\s*$")
 
 
 def _extract_snippet_usings(snippet: str) -> list[str]:
@@ -271,19 +276,26 @@ def _ensure_program_using(program_body: str, host_namespace: str) -> str:
     Insertion point: immediately after the last `^using ` line at column 0.
     If no using lines exist, prepend at the top. Idempotent — already-present
     using is a no-op.
+
+    Preserves the line-ending style of the existing usings (LF vs CRLF)
+    so we don't introduce mixed endings on Windows-checked-out repos.
     """
     target_line = f"using {host_namespace};"
     if target_line in program_body:
         return program_body
     lines = program_body.splitlines(keepends=True)
     last_using_idx = -1
+    detected_eol = "\n"
     for i, line in enumerate(lines):
         if line.startswith("using ") and line.rstrip().endswith(";"):
             last_using_idx = i
+            if line.endswith("\r\n"):
+                detected_eol = "\r\n"
+            elif line.endswith("\n"):
+                detected_eol = "\n"
     if last_using_idx == -1:
-        return target_line + "\n" + program_body
-    # Insert after the last using.
-    lines.insert(last_using_idx + 1, target_line + "\n")
+        return target_line + detected_eol + program_body
+    lines.insert(last_using_idx + 1, target_line + detected_eol)
     return "".join(lines)
 
 
