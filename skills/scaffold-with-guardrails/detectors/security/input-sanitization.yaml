@@ -1,0 +1,8 @@
+id: input-sanitization
+display: Input sanitization (HtmlEncoder etc.)
+layer: security
+priority: 40
+files: ["src/**/*.cs"]
+signal:
+  cs: ["HtmlEncoder\\.", "UrlEncoder\\.", "JavaScriptEncoder\\."]
+extract: enclosing-method

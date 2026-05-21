@@ -1,0 +1,8 @@
+id: data-protection
+display: DataProtection key persistence
+layer: security
+priority: 60
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddDataProtection\\s*\\(", "PersistKeysToAzureBlobStorage"]
+extract: enclosing-method-or-extension
