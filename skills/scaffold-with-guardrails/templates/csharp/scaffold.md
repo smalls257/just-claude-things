@@ -332,6 +332,12 @@ builder.Services
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+// {{CONVENTION:logging}}
+// {{CONVENTION:observability}}
+// {{CONVENTION:auth}}
+// {{CONVENTION:data}}
+// {{CONVENTION:http-outbound}}
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -346,6 +352,8 @@ if (app.Environment.IsDevelopment())
             () => Results.Redirect("/swagger/index.html"))
         .ExcludeFromDescription();
 }
+
+// {{CONVENTION:middleware}}
 
 app.UseHttpsRedirection();
 app.MapHealthChecks("/health");
