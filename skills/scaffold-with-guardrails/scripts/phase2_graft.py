@@ -55,6 +55,12 @@ def _layer_for_detector(detector_id: str) -> tuple[str, bool]:
     sys.exit(1)
 
 
+def _slot_exists(program_body: str, layer: str) -> bool:
+    """Check if a slot marker exists for the given layer."""
+    pattern = re.compile(SLOT_RE_TMPL % re.escape(layer), re.MULTILINE)
+    return bool(pattern.search(program_body))
+
+
 def _graft_one(program_body: str, layer: str, snippet: str, source_comment: str) -> str:
     pattern = re.compile(SLOT_RE_TMPL % re.escape(layer), re.MULTILINE)
     if not pattern.search(program_body):
@@ -129,6 +135,9 @@ def main():
         if not d.adopted:
             continue
         layer = f"dev-{d.target}"
+        if not _slot_exists(body, layer):
+            print(f"WARN_NO_SLOT: no '// {{{{CONVENTION:{layer}}}}}' in template — add marker to graft dev-named:{d.target}", file=sys.stderr)
+            continue
         body = _graft_one(body, layer, _staged_text(staged_root, d.staged),
                           f"// SOURCE: dev-named:{d.target} — {d.source}")
         _graft_packages(cpm_path, d.packages)
@@ -137,6 +146,9 @@ def main():
         if not d.adopted:
             continue
         layer = f"discovered-{d.name}"
+        if not _slot_exists(body, layer):
+            print(f"WARN_NO_SLOT: no '// {{{{CONVENTION:{layer}}}}}' in template — add marker to graft discovered:{d.name}", file=sys.stderr)
+            continue
         body = _graft_one(body, layer, _staged_text(staged_root, d.staged),
                           f"// SOURCE: discovered:{d.name} — {d.source}")
 
