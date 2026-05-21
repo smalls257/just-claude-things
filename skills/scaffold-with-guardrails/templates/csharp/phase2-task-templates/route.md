@@ -38,7 +38,7 @@ public static class {{MODULE}}Endpoints
 Inside `Map{{MODULE}}Endpoints`, append:
 
 ```csharp
-app.Map{{METHOD_PASCAL}}("{{PATH}}",
+app.{{METHOD_PASCAL}}("{{PATH}}",
     IResult ({{REQUEST_TYPE_OR_EMPTY}}) =>
         throw new NotImplementedException("TODO: implement {{METHOD}} {{PATH}}"));
 ```
