@@ -3,8 +3,7 @@
   "name": "just-claude-things",
   "description": "Project lifecycle skills: requirements-grill → tech-design-grill → scaffold-with-guardrails → to-issues",
   "owner": {
-    "name": "Jason Smith",
-    "email": "REDACTED"
+    "name": "Jason Smith"
   },
   "plugins": [
     {

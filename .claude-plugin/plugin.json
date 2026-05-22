@@ -4,8 +4,7 @@
   "version": "0.1.0",
   "description": "Scaffold-with-guardrails + tech-design-grill + requirements-grill + to-issues — opinionated project lifecycle skills",
   "author": {
-    "name": "Jason Smith",
-    "email": "REDACTED"
+    "name": "Jason Smith"
   },
   "repository": "https://github.com/smalls257/just-claude-things",
   "license": "MIT",
