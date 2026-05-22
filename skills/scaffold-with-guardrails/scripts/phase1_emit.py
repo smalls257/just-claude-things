@@ -60,6 +60,21 @@ def emit(target_root: Path, app_name: str) -> None:
         shutil.copy(TEMPLATES / fname, target_root / fname)
     shutil.copy(TEMPLATES / "gitignore", target_root / ".gitignore")
 
+    # 1b. Emit project-scoped NuGet.Config BEFORE any `dotnet new` so every
+    # subsequent dotnet invocation in this directory consults only nuget.org.
+    # Without this, an inherited user-level config with multiple sources
+    # (e.g. msft_consumption + nuget.org) triggers NU1507 under CPM, which
+    # TreatWarningsAsErrors=true promotes to a build error.
+    (target_root / "NuGet.Config").write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        "<configuration>\n"
+        "  <packageSources>\n"
+        "    <clear />\n"
+        '    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />\n'
+        "  </packageSources>\n"
+        "</configuration>\n"
+    )
+
     # 2. dotnet new sln + projects.
     _run(["dotnet", "new", "sln", "-n", app_name], cwd=target_root)
     for layer in ("Domain", "Application", "Infrastructure", "Persistence"):
