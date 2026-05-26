@@ -6,6 +6,11 @@ blocks completion.
 
 ## Violation Guide (from `~/.claude/CLAUDE.md`)
 
+Four of the ten violations are omitted here: Computational Friction, God Class /
+Method, Fossil Comments, and Infected Core target code and design artifacts, not a
+prose risk register. The anti-theater gates below fill those slots. Do not re-add the
+omitted four indiscriminately.
+
 - [ ] **Paper Tiger** — The register surfaced modes the user did not already hold, and
   the plan changed or risks were explicitly accepted. A clean run that changed nothing
   fails this box. Evidence:

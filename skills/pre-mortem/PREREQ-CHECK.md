@@ -27,6 +27,7 @@ plan exists: design complete, tickets sliced, requirements readable for the goal
    - If it exists with `status: in-progress`:
      > *"Last pre-mortem left deferred items. Resume, or start fresh?"*
      Resume: reload `deferred[]` and continue from the first open D-XXX/OQ-XXX.
+     Start fresh: ask for a new slug and proceed as if the file were missing.
    - If it exists with `status: complete`:
      > *"Pre-mortem already complete for this slug. Overwrite (re-run) or new slug?"*
      Overwrite: confirm once, then proceed as if missing.

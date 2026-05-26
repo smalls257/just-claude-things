@@ -39,6 +39,10 @@ plan_changed: true | false     # did any edit get applied to an upstream doc?
   the audit trail intact.
 - `last_session` is auto-stamped every time the skill writes the file.
 - `prereqs[]` records the three docs this pre-mortem read. It is the audit trail.
+- `plan_changed` tracks *applied edits only*. An all-accepted run with no applied edits
+  leaves it `false` and still passes — the NEG-AUDIT plan-change gate covers accepted
+  risks separately. `plan_changed: false` on a complete register is not "the skill did
+  nothing"; check the accepted-risks section.
 - `novel_mode_count`, `mundane_mode_count`, `plan_changed` are the success proxies.
   They are facts derived from the register body, not aspirations. The NEG-AUDIT reads
   them; a `novel_mode_count: 0` or `plan_changed: false` run is **suspicious**, not
