@@ -1,0 +1,8 @@
+id: integration-test-base
+display: Shared integration test base class
+layer: testing
+priority: 50
+files: ["tests/**/*.cs", "test/**/*.cs"]
+signal:
+  cs: ["class\\s+\\w*TestBase", "IClassFixture<\\w*Fixture>"]
+extract: enclosing-class

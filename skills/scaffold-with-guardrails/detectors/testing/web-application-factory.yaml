@@ -1,0 +1,8 @@
+id: web-application-factory
+display: WebApplicationFactory test host
+layer: testing
+priority: 70
+files: ["tests/**/*.cs", "test/**/*.cs"]
+signal:
+  cs: ["WebApplicationFactory<"]
+extract: enclosing-class

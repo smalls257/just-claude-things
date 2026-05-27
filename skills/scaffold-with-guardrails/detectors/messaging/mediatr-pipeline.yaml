@@ -1,0 +1,8 @@
+id: mediatr-pipeline
+display: MediatR pipeline behavior
+layer: messaging
+priority: 50
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddMediatR\\s*\\(", "IPipelineBehavior<"]
+extract: enclosing-method-or-extension

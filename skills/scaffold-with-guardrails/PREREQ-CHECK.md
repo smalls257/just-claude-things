@@ -32,6 +32,31 @@ Each skill runs this at invocation.
      - **If new slug:** ask for a new slug and proceed as if file missing.
    - If file missing: proceed to grill.
 
+5. **Tag well-formedness (Phase-2 prep).** Runs only after steps 1–4 pass —
+   no point validating tags on a tech-design that hasn't reached `status: complete`.
+   If the tech-design doc contains any `<module ` substring:
+   - Scan for balanced `<module>...</module>` pairs. If unbalanced, report
+     the line of the unmatched opening tag (or `EOF` if no opener was found).
+   - Scan inner blocks `<entities>`, `<enums>`, `<contracts>`, `<endpoints>`
+     for balanced open/close. Report the line of the unmatched opening tag.
+   - Verify `<module name="X">` attribute is PascalCase. Report the line
+     containing the offending `<module name="...">`.
+   - **Collect all well-formedness failures.** Do not stop on the first one
+     — report them together so the user fixes them in one pass (same shape
+     as the Phase-2 pre-check failure report).
+   - If any failures collected: **stop**. Message:
+     > *"Tech-design `<module>` tags are malformed:*
+     > *  1. line N1: `<snippet>` — <what's wrong>*
+     > *  2. line N2: `<snippet>` — <what's wrong>*
+     > *  ...*
+     > *See `skills/scaffold-with-guardrails/TECH-DESIGN-TAGS.md` for the schema. Fix tags or remove them, then re-run."*
+
+   This gate runs during Phase-1 prereq validation. Semantic cross-reference
+   validation runs inside Phase-2 pre-check — **and only if Phase-2 is
+   invoked.** If the user declines the Phase-2 handoff, no semantic check
+   ever runs against the `<module>` tags. The well-formedness pass here
+   does not certify the tech-design's internal consistency.
+
 ## Canonical paths
 
 | Artifact | Path pattern |

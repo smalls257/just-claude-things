@@ -1,0 +1,62 @@
+=========================================
+Phase-2 Domain Populate — Summary
+=========================================
+
+Tech-design: docs/tech-design/{{SLUG}}.md
+Modules processed: {{MODULE_LIST}}
+
+Counts: {{N_ENTITIES}} entities, {{N_ENUMS}} enums, {{N_CONTRACTS}} contracts, {{N_ROUTES}} routes, {{N_FILES}} files written ({{N_OVERWRITTEN}} overwritten)
+
+Migration output folder: {{MIGRATIONS_DIR}}   (migrations/ default, db/migrations/ if it existed)
+
+Files generated (NEW):
+  {{NEW_FILES_LIST}}
+
+Documentation-only entities (skipped — comment-only SQL fence):
+  {{DOC_ONLY_ENTITIES | "(none)"}}
+
+Files OVERWRITTEN (had prior contents):
+  {{OVERWRITTEN_FILES | "(none)"}}
+
+Pre-check substitutions:
+  {{PRECHECK_SUBSTITUTIONS | "(none)"}}
+
+FK forward-references in migration SQL:
+  {{FK_FORWARD_REFS | "(none)"}}
+
+Build status: {{BUILD_STATUS}}      # SUCCEEDED | FAILED — see errors above
+
+Modules not wired in Program.cs:
+  {{UNWIRED_MODULES | "(none — all Map<Module>Endpoints calls present)"}}
+
+Next steps:
+  - Fill in `// TODO` blocks in Domain entities (invariants, factories)
+  - Replace `throw new NotImplementedException()` in endpoint handlers
+  - Replace `Placeholder()` test methods with real cases
+  - Wire `app.Map<Module>Endpoints();` calls listed under "Modules not wired" above
+  - Apply migration: `psql ... < {{MIGRATIONS_DIR}}/0001_initial_schema.sql`
+  - If any FK forward-references were reported above, verify table
+    emission order satisfies your CREATE constraints before applying
+
+=========================================
+
+# ============================================================================
+# Template legend
+# ============================================================================
+# {{NAME}}                      — single value, always substituted
+# {{NAME | "default"}}          — list value; emit list lines or the default
+#                                 string verbatim when list is empty
+#
+# List sections (DOC_ONLY_ENTITIES, OVERWRITTEN_FILES, PRECHECK_SUBSTITUTIONS,
+# FK_FORWARD_REFS, UNWIRED_MODULES) each emit one entry per line, two-space
+# indented. Examples:
+#
+#   Documentation-only entities (skipped — comment-only SQL fence):
+#     Shared.Money
+#     Catalog.IsbnFormat
+#
+#   Pre-check substitutions:
+#     Endpoint Orders.POST /orders Request: LineItem → object (user picked proceed)
+#
+#   Modules not wired in Program.cs:
+#     Catalog   <-- add `app.MapCatalogEndpoints();` to Program.cs (else routes 404)

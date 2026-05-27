@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "just-claude-things",
+  "version": "0.2.0",
+  "description": "Scaffold-with-guardrails + tech-design-grill + requirements-grill + to-issues — opinionated project lifecycle skills",
+  "author": {
+    "name": "Jason Smith"
+  },
+  "repository": "https://github.com/smalls257/just-claude-things",
+  "license": "MIT",
+  "keywords": ["scaffold", "architecture", "governance", "tech-design", "requirements"],
+  "skills": "./skills/"
+}

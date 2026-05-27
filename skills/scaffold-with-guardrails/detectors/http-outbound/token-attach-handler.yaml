@@ -1,0 +1,8 @@
+id: token-attach-handler
+display: Bearer token DelegatingHandler
+layer: http-outbound
+priority: 50
+files: ["src/**/*.cs"]
+signal:
+  cs: ["class\\s+\\w*Token\\w*Handler\\s*:\\s*DelegatingHandler", "AddHttpMessageHandler<"]
+extract: enclosing-class

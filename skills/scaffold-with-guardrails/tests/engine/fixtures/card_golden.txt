@@ -1,0 +1,12 @@
+======================================================================
+DETECTOR: auth-jwt-bearer — JWT bearer auth
+SOURCE:   src/Auth/JwtExtensions.cs:L12-L45
+PACKAGES: Microsoft.AspNetCore.Authentication.JwtBearer:8.0.5
+UNRESOLVED: Mystery.Lib
+CONFLICTS: overrides http-token-handler at L50-L55
+----------------------------------------------------------------------
+public static class JwtExtensions
+{
+    // ...
+}
+----------------------------------------------------------------------

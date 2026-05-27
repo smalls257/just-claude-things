@@ -1,0 +1,8 @@
+id: serialization
+display: JSON serializer configuration
+layer: http-inbound
+priority: 40
+files: ["src/**/*.cs"]
+signal:
+  cs: ["ConfigureHttpJsonOptions\\s*\\(", "AddJsonOptions\\s*\\("]
+extract: enclosing-method-or-extension

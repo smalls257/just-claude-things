@@ -1,0 +1,9 @@
+id: connection-string-source
+display: Connection string source (config / KeyVault / env)
+layer: data
+priority: 70
+files: ["src/**/*.cs", "src/**/appsettings*.json"]
+signal:
+  cs: ["GetConnectionString\\s*\\("]
+  json: ["\"ConnectionStrings\"\\s*:"]
+extract: enclosing-method-or-extension

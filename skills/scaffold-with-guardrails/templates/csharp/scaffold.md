@@ -3,6 +3,17 @@
 Canonical scaffold the skill applies when the tech-design's stack is C# / .NET 9.
 Skill grills briefly first, then runs these commands in the target repo.
 
+> **Vocabulary.** This file uses **layer** = clean-architecture project
+> (`<App>.Domain`, `<App>.Application`, `<App>.Infrastructure`,
+> `<App>.Persistence`, `<App>.Api`, `<App>.Service`, optionally
+> `<App>.Client`). `SKILL.md` and other skill docs use **module** for
+> the same thing. **Module** elsewhere in the skill (e.g., Phase-2's
+> `<module name="Catalog">` in the tech-design) means a *business
+> module* — a feature slice that cuts across layers (Domain entities,
+> Application handlers, Persistence repos). Don't conflate the two.
+> Per-layer arch tests live at `tests/<App>.Tests.Unit/Architecture/<Layer>ArchitectureTests.cs`;
+> per-business-module code lives at `src/<App>.<Layer>/<Module>/`.
+
 ## Grill questions (skill asks before scaffolding)
 
 1. **App name** (PascalCase, e.g., `ExpensePortal`)
@@ -14,6 +25,55 @@ Skill grills briefly first, then runs these commands in the target repo.
 > asking up front — bakes in a guess that's painful to reverse). Both hosts
 > share the same Application layer; deleting one is one project removal +
 > one csproj edit, not a refactor.
+
+## After grill: Module-vs-App collision check (mandatory)
+
+After the App name is collected and **before** any `dotnet new` runs, scan
+the tech-design at `docs/tech-design/<slug>.md` for `<module name="...">`
+tags. If any module name equals the App name (case-sensitive PascalCase
+match), **abort**:
+
+> *"Module name '<MODULE>' collides with App name '<APP>'. The App is the*
+> *bounded context; modules sit inside it and must not share its name.*
+> *Rename the module in the tech-design, then re-run."*
+
+Concrete shell — run after collecting `$APP` and the `$SLUG` from PREREQ-CHECK:
+
+```bash
+TECH_DESIGN="docs/tech-design/${SLUG}.md"
+if [ -f "$TECH_DESIGN" ]; then
+  grep -oE '<module name="[^"]+"' "$TECH_DESIGN" \
+    | sed -E 's/.*name="([^"]+)"/\1/' \
+    | while read -r MOD; do
+        if [ "$MOD" = "$APP" ]; then
+          echo "FAIL: Module name '$MOD' collides with App name '$APP'."
+          echo "      Rename the module in the tech-design — the App is"
+          echo "      the bounded context; modules sit inside it and"
+          echo "      must not share its name."
+          exit 1
+        fi
+      done
+fi
+```
+
+This is the **load-bearing** Phase-1 gate against C# namespace shadowing.
+When `{{MODULE}} == {{APP_NAME}}`, Phase-2 would emit
+`namespace Library.Domain.Library;` and per-test `using Library.Domain.Library;`
+inside `namespace Library.Tests.Unit.Library;` — C# enclosing-namespace-first
+resolution then fails CS0234 because the compiler resolves the unqualified
+`Library` to the current namespace, not root. The `global::` workaround
+exists (see the NetArchTest section below for an example) but every reader
+pays a **Leaky Narrative** tax mentally disambiguating the duplicated
+`Library` token at every call site. The fix lives in the tech-design
+(rename the module), not in the generator (auto-suffixing would be a
+**Silent Fallback** that hides the design smell).
+
+This check **must run in Phase-1** because Phase-1 already bakes the
+module name into AGENTS.md, NetArchTest per-layer tests, and per-module
+`.semgrep/` rules before Phase-2 sees the design. By the time Phase-2's
+own copy of this rule (`scaffold-phase-2.md` Step P3 rule 5) fires, the
+collision is already canonical in governance files. Defense in depth:
+both gates stand.
 
 ## Default stack choices
 
@@ -54,12 +114,15 @@ cp "$SCAFFOLD/templates/csharp/global.json" .
 cp "$SCAFFOLD/templates/csharp/Directory.Build.props" .
 cp "$SCAFFOLD/templates/csharp/Directory.Packages.props" .
 
-# .gitignore must land before `dotnet new` runs — every `dotnet new` and
-# every subsequent build/test creates bin/, obj/, TestResults/ under each
-# project. Without this copy, `git status` shows ~550 untracked artifacts
-# the moment the first build finishes. Source file is named `gitignore`
-# (no leading dot) in templates/ so it ships through filesystems / git
-# operations that strip dotfiles; rename on copy.
+# .gitignore must land before any `dotnet new` that creates bin/ or obj/
+# (i.e., `classlib`, `webapi`, `worker`, `xunit` — not `sln` or
+# `tool-manifest`, which only emit text files into the working directory).
+# Every classlib/webapi/worker/xunit project, plus every subsequent
+# build/test, creates bin/, obj/, TestResults/ under each project. Without
+# this copy, `git status` shows ~550 untracked artifacts the moment the
+# first build finishes. Source file is named `gitignore` (no leading dot)
+# in templates/ so it ships through filesystems / git operations that
+# strip dotfiles; rename on copy.
 cp "$SCAFFOLD/templates/csharp/gitignore" .gitignore
 
 dotnet new sln -n "$APP"
@@ -94,6 +157,31 @@ find . -name "*.csproj" | sort | xargs dotnet sln add
 find src tests -name '*.csproj' -exec sed -i.bak 's/ Version="[^"]*"//g' {} +
 find src tests -name '*.csproj.bak' -delete
 
+# Suppress CA1707 (identifier contains underscore) on test projects only.
+# Phase-2 emits integration test classes named `{METHOD}_{PATH_SAFE}_Tests`
+# (e.g., `GET_orders_byId_Tests`) — the underscores encode the HTTP route and
+# are the xUnit/.NET community convention for route-named tests; renaming
+# them to `MethodPathTests` destroys readability for no real benefit. We
+# suppress the warning at the test-project level, NOT globally — `src/`
+# stays strict (Directory.Build.props sets EnforceCodeStyleInBuild=true and
+# TreatWarningsAsErrors on `src/`, and that policy stands). The injection
+# adds <NoWarn>$(NoWarn);CA1707</NoWarn> into the existing <PropertyGroup>
+# of each Tests.* csproj. Same macOS-portable sed form as above.
+for TEST_CSPROJ in \
+  tests/"$APP".Tests.Unit/"$APP".Tests.Unit.csproj \
+  tests/"$APP".Tests.Integration/"$APP".Tests.Integration.csproj; do
+  # Inject `<NoWarn>` before the first `</PropertyGroup>` only. Using `sed`
+  # for cross-version newline handling (GNU `\n` vs. BSD literal-newline)
+  # is fragile; awk gives one portable form. `&& mv` keeps the write atomic.
+  awk '
+    !done && /<\/PropertyGroup>/ {
+      print "    <NoWarn>$(NoWarn);CA1707</NoWarn>"
+      done = 1
+    }
+    { print }
+  ' "$TEST_CSPROJ" > "$TEST_CSPROJ.tmp" && mv "$TEST_CSPROJ.tmp" "$TEST_CSPROJ"
+done
+
 # Dependency direction: Domain ← Application ← Infrastructure/Persistence
 dotnet add src/"$APP".Application/"$APP".Application.csproj \
   reference src/"$APP".Domain/"$APP".Domain.csproj
@@ -106,19 +194,38 @@ dotnet add src/"$APP".Persistence/"$APP".Persistence.csproj \
   reference src/"$APP".Application/"$APP".Application.csproj \
              src/"$APP".Domain/"$APP".Domain.csproj
 
-# Test project refs
+# Test project refs — Tests.Unit must reference EVERY layer it tests.
+# The arch-test bullet below ("one per layer") means we emit a
+# DomainArchitectureTests, ApplicationArchitectureTests, etc. — each one
+# does `typeof(<App>.<Layer>.AssemblyMarker).Assembly` to anchor the
+# NetArchTest scan, so the marker's assembly MUST be referenced or the
+# test file won't compile (CS0246 on the namespace). Skipping refs here
+# is the canonical Forensic-Coding trap: the failure surfaces as a
+# cryptic CS0246 mid-build, and the reader has to reverse-engineer that
+# the playbook's "add refs" step undercounted vs. the "one test per
+# layer" step. Add all four src-layer refs explicitly.
 dotnet add tests/"$APP".Tests.Unit/"$APP".Tests.Unit.csproj \
   reference src/"$APP".Domain/"$APP".Domain.csproj \
-             src/"$APP".Application/"$APP".Application.csproj
+             src/"$APP".Application/"$APP".Application.csproj \
+             src/"$APP".Infrastructure/"$APP".Infrastructure.csproj \
+             src/"$APP".Persistence/"$APP".Persistence.csproj
 
-# Both hosts reference all four layers (composition root)
-for HOST in Api Service; do
-  dotnet add src/"$APP".$HOST/"$APP".$HOST.csproj \
-    reference src/"$APP".Application/"$APP".Application.csproj \
-               src/"$APP".Infrastructure/"$APP".Infrastructure.csproj \
-               src/"$APP".Persistence/"$APP".Persistence.csproj \
-               src/"$APP".Domain/"$APP".Domain.csproj
-done
+# Api composition root — references Application, Infrastructure, Domain.
+# NOTE: NO Persistence direct reference — Api routes data access through
+# Application (clean architecture). The .semgrep/<app>/api.yaml rule
+# `lib-api-no-persistence-ref` enforces this; playbook and rule agree.
+dotnet add src/"$APP".Api/"$APP".Api.csproj \
+  reference src/"$APP".Application/"$APP".Application.csproj \
+             src/"$APP".Infrastructure/"$APP".Infrastructure.csproj \
+             src/"$APP".Domain/"$APP".Domain.csproj
+
+# Service composition root — Worker hosts legitimately wire repos directly
+# for background-job composition. Persistence ref is allowed here.
+dotnet add src/"$APP".Service/"$APP".Service.csproj \
+  reference src/"$APP".Application/"$APP".Application.csproj \
+             src/"$APP".Infrastructure/"$APP".Infrastructure.csproj \
+             src/"$APP".Persistence/"$APP".Persistence.csproj \
+             src/"$APP".Domain/"$APP".Domain.csproj
 
 # NuGet packages — pin MediatR + MassTransit to last MIT releases.
 # Directory.Packages.props (copied above) sets ManagePackageVersionsCentrally=true,
@@ -134,6 +241,17 @@ dotnet add src/"$APP".Service/"$APP".Service.csproj package MediatR
 dotnet add src/"$APP".Service/"$APP".Service.csproj package MassTransit
 dotnet add src/"$APP".Service/"$APP".Service.csproj package MassTransit.RabbitMQ
 dotnet add tests/"$APP".Tests.Unit/"$APP".Tests.Unit.csproj package NetArchTest.Rules
+
+# Swagger UI — adds the static-asset host package. The OpenAPI document
+# itself is still produced by Microsoft.AspNetCore.OpenApi (pulled in by
+# `dotnet new webapi`); SwaggerUI only serves the rendering harness.
+# Pinned in Directory.Packages.props, so this writes a versionless
+# PackageReference under ManagePackageVersionsCentrally=true.
+# (Doing it here, BEFORE the Program.cs rewrite below, means a reader
+# who hand-edits Program.cs to add `app.UseSwaggerUI(...)` has the
+# package already present and avoids a second `dotnet add package` step
+# that would re-trigger the Version-strip dance.)
+dotnet add src/"$APP".Api/"$APP".Api.csproj package Swashbuckle.AspNetCore.SwaggerUI
 ```
 
 ### Directory.Packages.props version pins
@@ -166,11 +284,32 @@ After `dotnet new`, the skill creates these files (generators don't produce them
 - `.github/workflows/openapi-diff.yml.disabled` — OpenAPI contract diff stub via oasdiff; copied from `templates/csharp/github-workflows/openapi-diff.yml.disabled` (rename to `.yml` after wiring spec gen)
 - `.claude/settings.json` — hook wiring
 - `.claude/hooks/{pre-commit,pre-push,stop-neg-audit}.sh` — copied from this skill (`chmod +x`)
-- `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference). **Includes `<App>.Client` when scaffolded** so the architecture tests can assert nothing in the client SDK references Infrastructure / Persistence
+- `src/<App>.<Layer>/AssemblyMarker.cs` — one per layer (required by NetArchTest to get assembly reference). **Must be `public`** so the test assembly can name `typeof(<App>.<Layer>.AssemblyMarker)` without `CS0122` (the type is referenced from `<App>.Tests.Unit/Architecture/*.cs` and an `internal` marker is inaccessible across assemblies). Canonical body — emit verbatim, no fields, no methods:
+
+  ```csharp
+  namespace {{APP_NAME}}.{{LAYER}};
+
+  /// <summary>NetArchTest anchor — gives Architecture tests an Assembly reference. Do not add members.</summary>
+  public sealed class AssemblyMarker { }
+  ```
+
+  **Includes `<App>.Client` when scaffolded** so the architecture tests can assert nothing in the client SDK references Infrastructure / Persistence.
 - `src/<App>.{Api,Service}/Configuration/*Options.cs` — typed config + `ValidateOnStart` triad (one file per options group)
 - `src/<App>.{Api,Service}/appsettings.Development.json` — populated with the matching section for every options class so `ValidateOnStart` does not fail on first `dotnet run` (see "Companion settings" under the Options validation pattern)
 
 After `dotnet new webapi`, also **strip the weather-forecast boilerplate** from `src/<App>.Api/Program.cs` (and delete `src/<App>.Api/*.http`). The generated example would trip `quality.yaml` (DateTime.Now, Random) and is not part of the app.
+
+**Also delete the `dotnet new classlib` and `dotnet new xunit` placeholder files** — every classlib leaves a `Class1.cs` containing an empty `Class1`, and every xunit project leaves a `UnitTest1.cs` with a single `Test1` method. These are **Forensic Coding** waiting to happen: dead boilerplate forces every future reader (human or Phase-2 subagent) to figure out it is dead, and a subagent could mistake `Class1.cs` for intentional starting scaffolding and extend it. Delete them before the first commit so the tree only contains code that is alive on purpose. Concretely, after all `dotnet new classlib` / `dotnet new xunit` calls finish, run:
+
+```bash
+# Run from the repo root (the directory containing src/ and tests/).
+# Strip dotnet new placeholder files (Forensic Coding prevention).
+# -maxdepth/-name/-delete is portable across BSD find (macOS) and GNU find (Linux).
+find src   -maxdepth 2 -name 'Class1.cs'    -delete
+find tests -maxdepth 2 -name 'UnitTest1.cs' -delete
+```
+
+This must hit every classlib layer (`Domain`, `Application`, `Infrastructure`, `Persistence`, and `Client` when scaffolded) and both test projects (`<App>.Tests.Unit`, `<App>.Tests.Integration`). After this step, `git status` should show no `Class1.cs` or `UnitTest1.cs` anywhere under `src/` or `tests/`.
 
 Replace `Program.cs` with the canonical skeleton below. It wires the
 OpenAPI spec (`/openapi/v1.json`), the Swagger UI page (`/swagger`, with
@@ -181,18 +320,11 @@ to confirm the host boots, options bind, and the kestrel routing table
 is alive. Swagger UI and `MapOpenApi` are gated to the Development
 environment so production never serves the doc surface.
 
-Add the Swagger UI package reference to `src/<App>.Api/<App>.Api.csproj`
-alongside `Microsoft.AspNetCore.OpenApi`:
-
-```xml
-<PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-<PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" />
-```
-
-(The version is pinned in `Directory.Packages.props`. The package ships
-the static UI assets only — the OpenAPI document itself is still
-produced by `Microsoft.AspNetCore.OpenApi`, so there are no duplicate
-generators.)
+(The `Swashbuckle.AspNetCore.SwaggerUI` package was added in the bash
+block above alongside the other `dotnet add package` calls. Version is
+pinned in `Directory.Packages.props`. The package ships the static UI
+assets only — the OpenAPI document itself is still produced by
+`Microsoft.AspNetCore.OpenApi`, so there are no duplicate generators.)
 
 ```csharp
 using <App>.Api.Configuration;
@@ -208,6 +340,12 @@ builder.Services
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+// {{CONVENTION:logging}}
+// {{CONVENTION:observability}}
+// {{CONVENTION:auth}}
+// {{CONVENTION:data}}
+// {{CONVENTION:http-outbound}}
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -222,6 +360,8 @@ if (app.Environment.IsDevelopment())
             () => Results.Redirect("/swagger/index.html"))
         .ExcludeFromDescription();
 }
+
+// {{CONVENTION:middleware}}
 
 app.UseHttpsRedirection();
 app.MapHealthChecks("/health");
@@ -253,10 +393,13 @@ After `dotnet new worker`, the default `Program.cs` is a minimal `Host.CreateApp
 
 **Also fix the generated `Worker.cs`.** `dotnet new worker` emits
 `_logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now)` which
-trips CA1848 (use compile-time logging delegates) and CA1727 (PascalCase
-placeholders) — both promoted to errors by `TreatWarningsAsErrors=true` on
-`src/`. Replace the `LogInformation` call with a `LoggerMessage` delegate so the
-first build is green:
+trips three gates at once: CA1848 (use compile-time logging delegates) and
+CA1727 (PascalCase placeholders) — both promoted to errors by
+`TreatWarningsAsErrors=true` on `src/` — and `quality.yaml`'s
+`<APP-KEY>-QUAL-R005 library-no-datetime-now` rule, which is
+`Program.cs`-excluded only. Replace the `LogInformation` call with a
+`LoggerMessage` delegate AND use `DateTimeOffset.UtcNow` so the first build
+is green and the semgrep gate stays quiet:
 
 ```csharp
 public sealed class Worker(ILogger<Worker> logger) : BackgroundService
@@ -273,13 +416,18 @@ public sealed class Worker(ILogger<Worker> logger) : BackgroundService
         {
             if (logger.IsEnabled(LogLevel.Information))
             {
-                LogHeartbeat(logger, DateTimeOffset.Now, null);
+                LogHeartbeat(logger, DateTimeOffset.UtcNow, null);
             }
             await Task.Delay(1000, stoppingToken);
         }
     }
 }
 ```
+
+**`UtcNow`, not `Now`** — `quality.yaml`'s `*-QUAL-R005` rule fires on
+`DateTimeOffset.Now` anywhere outside `Program.cs`, and `Worker.cs` is not
+excluded. Time math should be UTC-internal regardless; tests against
+heartbeats need a deterministic source.
 
 Or strip the heartbeat body entirely if the worker has real work to do — the
 goal is just to keep the first build clean under TWAE.
@@ -452,90 +600,33 @@ covers the "tests run but don't assert" gap that line coverage misses.
 
 After `dotnet new` steps complete, the skill installs the language-agnostic
 gate system from `templates/common/` and the .NET-conditional pieces from
-`templates/csharp/`:
+`templates/csharp/` via two deterministic shell scripts:
 
 ```bash
-# Language-agnostic
-# Use `cp -R <src>/. <dst>/` (trailing `/.`) for directory copies — bare
-# `cp -R <src> <dst>` on macOS nests src *inside* dst on re-run, which makes
-# the scaffold non-idempotent and silently produces .githooks/githooks/...
-cp "$SCAFFOLD/templates/common/.editorconfig" .
-mkdir -p .githooks       && cp -R "$SCAFFOLD/templates/common/githooks/."     .githooks/
-mkdir -p scripts         && cp -R "$SCAFFOLD/templates/common/scripts/."      scripts/
-cp    "$SCAFFOLD/templates/common/gitconfig-gates"     .gitconfig.gates
-cp    "$SCAFFOLD/templates/common/gates.toml.example"  .gates.toml
-mkdir -p .tools
-cp "$SCAFFOLD/templates/common/tools/manifest.toml.template" .tools/manifest.toml
-cp "$SCAFFOLD/templates/common/tools/gitignore-template"     .tools/.gitignore
-mkdir -p .semgrep/packs
-# csharp.yaml is already C#-only — copy verbatim.
-cp "$SCAFFOLD/templates/common/semgrep-packs/csharp.yaml" .semgrep/packs/
-# owasp-top-ten.yaml vendors 544 rules across 25 languages. Filter at copy
-# time to the C#-applicable subset (csharp / C# / generic / yaml /
-# dockerfile / regex / json / bash). Drops the pack from ~1.3 MB to ~190 KB
-# and stops semgrep from loading 467 inert python/java/go/php/ruby/scala/
-# kotlin/swift/clojure/solidity/hcl/terraform/html rules on every gate run.
-# When the python / typescript scaffolds land, copy this block with a
-# different KEEP set; do NOT mutate the vendored common/ file.
-# PyYAML prereq — `python3 -c 'import yaml'` only ships with PyYAML
-# installed (it's not in the stdlib). Guard the import so the scaffold
-# fails loudly with an actionable message instead of a generic
-# `ModuleNotFoundError: No module named 'yaml'` mid-script.
-python3 -c 'import yaml' 2>/dev/null || {
-    echo "PyYAML required for OWASP pack filtering. Installing via pip3..."
-    pip3 install --quiet --user pyyaml || {
-        echo "ERROR: pip3 install pyyaml failed. Install manually and retry."
-        exit 1
-    }
-}
-
-SRC="$SCAFFOLD/templates/common/semgrep-packs/owasp-top-ten.yaml" \
-DST=".semgrep/packs/owasp-top-ten.yaml" \
-python3 - <<'PY'
-import os, yaml
-KEEP = {'csharp', 'C#', 'generic', 'yaml', 'dockerfile', 'regex', 'json', 'bash'}
-with open(os.environ['SRC']) as f:
-    pack = yaml.safe_load(f)
-pack['rules'] = [r for r in pack['rules'] if set(r.get('languages', []) or []) & KEEP]
-with open(os.environ['DST'], 'w') as f:
-    yaml.safe_dump(pack, f, sort_keys=False, default_flow_style=False, width=4096)
-print(f"Filtered OWASP pack -> {len(pack['rules'])} C#-applicable rules")
-PY
-cp    "$SCAFFOLD/templates/common/docs/BYPASS-POLICY.md"      BYPASS-POLICY.md
-cp    "$SCAFFOLD/templates/common/docs/BRANCH-PROTECTION.md"  BRANCH-PROTECTION.md
-mkdir -p docs
-cp "$SCAFFOLD/templates/common/docs/rules-audit.md.template" docs/rules-audit.md
-mkdir -p .github
-cp "$SCAFFOLD/templates/common/.github/PULL_REQUEST_TEMPLATE.md" .github/
-mkdir -p .github/workflows
-cp "$SCAFFOLD/templates/common/github-workflows/gates-backstop.yml.disabled" .github/workflows/
-cp "$SCAFFOLD/templates/common/github-workflows/tools-pin-check.yml"          .github/workflows/
-
-# .NET-conditional
-cp "$SCAFFOLD/templates/csharp/github-workflows/stryker-nightly.yml" .github/workflows/
-cp "$SCAFFOLD/templates/csharp/github-workflows/openapi-diff.yml.disabled" .github/workflows/
-cp "$SCAFFOLD/templates/csharp/stryker-config.json" .
-cp "$SCAFFOLD/templates/csharp/coverlet.runsettings" .
-
-# Make executables
-chmod +x .githooks/pre-commit .githooks/pre-push .githooks/commit-msg
-chmod +x .githooks/pre-commit.d/* .githooks/pre-push.d/* .githooks/commit-msg.d/*
-chmod +x scripts/*.sh
-
-# Stryker.NET tool install.
-# Pin `--source https://api.nuget.org/v3/index.json` so the install
-# bypasses any private feeds configured in the user's global NuGet.Config
-# (Azure DevOps `msft_consumption`, GitHub Packages, internal proxies,
-# etc.). `dotnet tool install` treats 401 from any configured feed as
-# fatal — even if nuget.org has the package — so a stale corp-feed token
-# would otherwise wedge the scaffold. dotnet-stryker is published only on
-# nuget.org; there is no reason to consult private feeds for it.
-dotnet new tool-manifest 2>/dev/null || true
-dotnet tool install dotnet-stryker --source https://api.nuget.org/v3/index.json
-
-# Run bootstrap to wire hooks + fetch tools
-./scripts/bootstrap.sh
+# $SCAFFOLD already set above to the absolute path of
+# skills/scaffold-with-guardrails/ in the plugin cache.
+export SCAFFOLD
+bash "$SCAFFOLD/scripts/phase1-install-gate-system.sh"
+bash "$SCAFFOLD/scripts/phase1-verify-gate-system.sh"
 ```
+
+The install script does all the file copies, the OWASP-pack language
+filter (PyYAML required), the chmods, the NuGet.Config override emission,
+the `dotnet tool install dotnet-stryker`, and `./scripts/bootstrap.sh`.
+Read the script if you need to debug a specific step — every action is
+prefixed `[install-gate-system]` in its stdout for traceability.
+
+The verify script runs immediately after, asserts every expected artifact
+exists, and exits non-zero on any miss. This is the **in-body sensor**
+that closes the failure mode where a subagent declares the install done
+without actually running every step. Phase-2's pre-flight tripwire-1 is
+the second line of defense; this script is the first.
+
+Both scripts are deterministic harness, not LLM-interpretable prose —
+which is the whole point. The previous inline ~110-line bash block was
+a Black Box from the controller's perspective: if a subagent reported
+"installed gate system", there was no in-procedure verification. The
+verify step turns that report into an observable post-condition.
 
 After the scaffold completes, the user must commit the populated
 `.tools/manifest.toml` (with real SHA256 checksums) to make the pinning
@@ -609,33 +700,173 @@ namespace {{APP_NAME}}.Tests.Unit.Architecture;
 public class DomainArchitectureTests
 {
     private static readonly Assembly DomainAssembly =
-        typeof({{APP_NAME}}.Domain.AssemblyMarker).Assembly;
+        typeof(global::{{APP_NAME}}.Domain.AssemblyMarker).Assembly;
 
-    /// <summary>Enforces {{APP_KEY}}-DOMAIN-R001</summary>
+    private static readonly string[] ForbiddenDependencies =
+    {
+        "{{APP_NAME}}.Application",
+        "{{APP_NAME}}.Infrastructure",
+        "{{APP_NAME}}.Persistence",
+        "{{APP_NAME}}.Api",
+        "{{APP_NAME}}.Service",
+        "Dapper",
+        "Npgsql",
+        "System.Data",
+        "System.Data.Common",
+        "Microsoft.EntityFrameworkCore",
+        "MediatR",
+        "MassTransit",
+        "Microsoft.AspNetCore",
+        "Microsoft.Extensions.Hosting",
+    };
+
+    /// <summary>Enforces {{APP_KEY}}-DOMAIN-R001 (CIL-level)</summary>
     [Fact]
     public void Domain_HasNoInfrastructureReferences()
     {
         var result = Types.InAssembly(DomainAssembly)
             .ShouldNot()
-            .HaveDependencyOnAny(
-                "{{APP_NAME}}.Application",
-                "{{APP_NAME}}.Infrastructure",
-                "{{APP_NAME}}.Persistence",
-                "{{APP_NAME}}.Api",
-                "{{APP_NAME}}.Service",
-                "Dapper",
-                "Npgsql",
-                "System.Data",
-                "System.Data.Common",
-                "Microsoft.EntityFrameworkCore",
-                "MediatR",
-                "MassTransit",
-                "Microsoft.AspNetCore",
-                "Microsoft.Extensions.Hosting")
+            .HaveDependencyOnAny(ForbiddenDependencies)
             .GetResult();
 
         Assert.True(result.IsSuccessful,
             $"Domain has forbidden refs: {string.Join(", ", result.FailingTypeNames ?? [])}");
     }
+
+    /// <summary>Enforces {{APP_KEY}}-DOMAIN-R001 (reference-level)</summary>
+    [Fact]
+    public void Domain_HasNoInfrastructureProjectReferences()
+    {
+        var forbidden = new HashSet<string>(ForbiddenDependencies, StringComparer.Ordinal);
+        var offenders = DomainAssembly.GetReferencedAssemblies()
+            .Select(r => r.Name ?? string.Empty)
+            .Where(forbidden.Contains)
+            .ToArray();
+        Assert.True(offenders.Length == 0,
+            $"Domain has forbidden project references: {string.Join(", ", offenders)}");
+    }
 }
 ```
+
+**Two tests, two failure modes.** `Domain_HasNoInfrastructureReferences` is
+the CIL-level check: it scans every type in the Domain assembly and fails
+if any of them *uses* a forbidden API (calls a method, names a type, etc.).
+`Domain_HasNoInfrastructureProjectReferences` is the reference-level check:
+it walks `DomainAssembly.GetReferencedAssemblies()` and fails if the csproj
+declares a forbidden `<ProjectReference>` even when no code uses the
+referenced types yet. Without the second test the first is a **Paper
+Tiger** on an empty scaffold — adding `<ProjectReference Include="...App.
+Persistence..." />` to `App.Domain.csproj` leaves zero CIL-level usages
+until someone writes the first `new SomePersistenceType()`, and the
+CIL-only test stays green during that window. Defense in depth:
+`.semgrep/.../{layer}.yaml` catches the csproj edit at lint time; this
+second test catches it at build time. Both must pass.
+
+**`global::` prefix on `typeof(...)`** — the test class lives in `{{APP_NAME}}.Tests.Unit.Architecture`. Without `global::`, the C# compiler resolves `{{APP_NAME}}.Domain` against the enclosing namespace first, looking for `{{APP_NAME}}.Tests.Unit.Architecture.{{APP_NAME}}.Domain` and failing with CS0234. The `global::` prefix forces root-namespace resolution.
+
+---
+
+## Phase-1 → Phase-2 handoff
+
+After Phase-1 completes successfully (solution builds, arch tests pass on
+empty scaffold), check whether Phase-2 (domain populate) should run.
+
+The handoff asks for explicit consent because Phase-2 overwrites
+generated files on every run. Auto-running whenever `<module>` tags
+appear would silently destroy in-progress edits the moment PREREQ-CHECK
+passes — a Silent Fallback. The prompt is the **Sensor** that prevents
+that failure mode.
+
+### Step H1: Scan tech-design for `<module>` tags
+
+Run: `grep -cE '<module[ >]' docs/tech-design/{{SLUG}}.md`
+
+(Matches `<module name="X">`, `<module>`, and `<module name=foo>`. This is intentionally broader than a strict well-formedness check — PREREQ-CHECK step 5 has already failed loud on malformed tags before this point. H1 only needs to ask: *are there any module-tag-shaped tokens?*)
+
+- If `0` → Phase-2 is skipped silently. Print a brief note:
+  > *"Tech-design has no `<module>` tags. Phase-2 (domain populate)
+  > skipped. See `skills/scaffold-with-guardrails/TECH-DESIGN-TAGS.md`
+  > if you want to add them later."*
+- If `≥ 1` → continue.
+
+### Step H2: Prompt the user
+
+Print exactly:
+
+```
+=========================================
+Phase-2: Domain Populate
+=========================================
+
+Your tech-design has <module> tags. Phase-2 can read them and generate:
+  - Domain entity classes (src/<App>.Domain/<Module>/)
+  - Dapper row types (src/<App>.Persistence/<Module>/)
+  - C# enums (src/<App>.Domain/<Module>/)
+  - API DTOs (src/<App>.Api/<Module>/Contracts/)
+  - Minimal route stubs (src/<App>.Api/<Module>/)
+  - Test stubs (tests/<App>.Tests.Unit/, tests/<App>.Tests.Integration/)
+  - Single bootstrap SQL migration (migrations/0001_initial_schema.sql, or db/migrations/ if that folder pre-exists)
+
+All generated code throws NotImplementedException — boilerplate only,
+no business logic. Re-running Phase-2 OVERWRITES generated files;
+commit your work first.
+
+Run Phase-2 now? [Y/n]
+```
+
+### Step H3: Branch on the answer
+
+- **User answers `n` (or `no`):**
+  > *"Phase-2 skipped. To run Phase-2 later, invoke the
+  > `templates/csharp/scaffold-phase-2.md` playbook directly — re-running
+  > this full skill against the existing scaffold will fail at
+  > `dotnet new sln`."*
+
+  Exit Phase-1 cleanly.
+
+- **User answers `Y` (or `yes`, or empty/default):**
+  Follow `templates/csharp/scaffold-phase-2.md` exactly. That playbook
+  takes over from here.
+
+### Re-running this skill
+
+Phase-1 is **not idempotent today**. The `dotnet new sln` and
+`dotnet new classlib` commands above have no existence checks, and the
+CLI refuses to overwrite an existing solution. To make changes after
+the initial scaffold:
+
+- To run Phase-2 against an existing Phase-1 scaffold: invoke
+  `templates/csharp/scaffold-phase-2.md` directly. Phase-2 *is* designed
+  to re-run — it overwrites generated domain files on every run.
+- To re-run Phase-1 itself: delete the existing solution directory and
+  start over. (Future work: add `if [ ! -e "$APP.sln" ]` guards so
+  Phase-1 short-circuits to the handoff when scaffold already exists.)
+- Phase-2 OVERWRITES generated files. Commit your work before
+  re-invoking Phase-2.
+
+## Convention slot markers
+
+`Program.cs` carries one `// {{CONVENTION:<layer>}}` marker per layer that
+the convention graft step can populate. The grafter replaces the marker line
+with the adopted snippet (or a stub comment if nothing was adopted).
+
+Layer-to-marker mapping in `Program.cs`:
+
+| Marker | Where in Program.cs | Source of snippet |
+|---|---|---|
+| `// {{CONVENTION:logging}}` | Before `builder.Build()` | `staged/<logging-id>.cs` |
+| `// {{CONVENTION:observability}}` | Before `builder.Build()` | `staged/<observability-id>.cs` |
+| `// {{CONVENTION:auth}}` | Before `builder.Build()` | `staged/<auth-id>.cs` |
+| `// {{CONVENTION:data}}` | Before `builder.Build()` | `staged/<data-id>.cs` |
+| `// {{CONVENTION:http-outbound}}` | Before `builder.Build()` | `staged/<http-outbound-id>.cs` |
+| `// {{CONVENTION:middleware}}` | After `builder.Build()`, before `app.Run()` | `staged/<middleware-id>.cs` |
+| `// {{CONVENTION:dev-<target>}}` | Required when scan produced an adopted dev-named entry | `staged/dev-<target>.cs` |
+| `// {{CONVENTION:discovered-<name>}}` | Required when scan produced an adopted discovered entry | `staged/discovered-<name>.cs` |
+
+If a marker is missing for a layer that has an adopted entry, the graft step
+halts with `NO_SLOT`. Add the marker to the template and re-run Phase-2.
+
+Stub templates live under `templates/csharp/snippets/<layer>.stub.cs` and
+contain an informational comment inserted when no scan adoption exists for
+the layer.
+

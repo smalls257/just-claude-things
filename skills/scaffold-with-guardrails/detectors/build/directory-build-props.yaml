@@ -1,0 +1,8 @@
+id: directory-build-props
+display: Directory.Build.props conventions
+layer: build
+priority: 80
+files: ["**/Directory.Build.props"]
+signal:
+  props: ["<TargetFramework>", "<Nullable>", "<TreatWarningsAsErrors>"]
+extract: props-property

@@ -1,0 +1,8 @@
+id: multi-tenancy
+display: Multi-tenant resolver registration
+layer: data
+priority: 50
+files: ["src/**/*.cs"]
+signal:
+  cs: ["ITenantResolver", "AddMultiTenant"]
+extract: enclosing-method-or-extension

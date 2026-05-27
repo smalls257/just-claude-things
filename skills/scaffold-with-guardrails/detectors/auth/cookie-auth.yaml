@@ -1,0 +1,8 @@
+id: cookie-auth
+display: Cookie authentication
+layer: auth
+priority: 70
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddCookie\\s*\\("]
+extract: enclosing-method-or-extension

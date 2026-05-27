@@ -22,3 +22,19 @@ assert_verified_trailer() {
     return 1
   fi
 }
+
+# --- Task lifecycle assertions (Phase-1.5) ---
+
+assert_task_completed() {
+  local log="$1"
+  local name="$2"
+  grep -q "TASK\[$name\] status=completed" "$log" \
+    || { echo "TASK_NOT_COMPLETED: $name (log: $log)" >&2; return 1; }
+}
+
+assert_task_in_progress() {
+  local log="$1"
+  local name="$2"
+  grep -q "TASK\[$name\] status=in_progress" "$log" \
+    || { echo "TASK_NOT_IN_PROGRESS: $name (log: $log)" >&2; return 1; }
+}

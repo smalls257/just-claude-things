@@ -1,0 +1,8 @@
+id: response-caching
+display: ASP.NET response caching middleware
+layer: caching
+priority: 40
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddResponseCaching\\s*\\(", "UseResponseCaching\\s*\\("]
+extract: enclosing-method-or-extension

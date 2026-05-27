@@ -1,6 +1,6 @@
 ---
 name: scaffold-with-guardrails
-description: Use when starting a new project after tech design is complete. Generates the repo scaffold (per the design), root CLAUDE.md, per-module AGENTS.md with IDed architectural rules, matching semgrep rules, NetArchTest arch tests, and Claude-only git hooks. Triggers include "scaffold the repo", "set up the project", "wire in arch tests", "bootstrap new app".
+description: Use when starting a new project after tech design is complete. Generates the repo scaffold (optionally populated from tech-design XML tags — Phase-2), root CLAUDE.md, per-module AGENTS.md with IDed architectural rules, matching semgrep rules, NetArchTest arch tests, and Claude-only git hooks. Triggers include "scaffold the repo", "set up the project", "wire in arch tests", "bootstrap new app".
 ---
 
 # scaffold-with-guardrails
@@ -26,6 +26,14 @@ docs + machine-enforced architectural rules + Claude-only hooks.
 - One NetArchTest test per arch rule in `tests/<App>.Tests.Unit/Architecture/`
 - `Directory.Build.targets` — semgrep gate BeforeTargets="Build"
 - `.claude/settings.json` + `.claude/hooks/{pre-commit,pre-push,stop-neg-audit}.sh`
+
+### Phase-2 (opt-in, generated from tech-design XML tags)
+
+- Domain entity classes, C# enums, Dapper row types, API DTO records
+- Minimal route stubs and xUnit skip-stub tests
+- `migrations/0001_initial_schema.sql` bootstrap
+
+See `TECH-DESIGN-TAGS.md` for the tag schema.
 
 ## Process
 
@@ -63,6 +71,37 @@ docs + machine-enforced architectural rules + Claude-only hooks.
 10. **Close.** `status: complete` in the tech design doc only after scaffold
     validates AND neg-audit passes.
 
+### Phase-1.5 — Convention scan
+
+After Phase-1 has produced `<module>` blocks and run validation, before Phase-2
+code generation, run the convention scan to harvest house patterns from a
+canonical reference repo:
+
+```bash
+bash skills/scaffold-with-guardrails/scripts/convention-scan.sh \
+  --reference-repo <PATH> \
+  --target-repo $PWD \
+  --design docs/tech-design/<slug>.md
+```
+
+The scan reads the detector registry under `skills/scaffold-with-guardrails/detectors/`
+(plus any project overrides in `.scaffold/detectors/`), surfaces dev-reviewable cards,
+and persists decisions in a `<conventions>` block appended to the tech-design doc
+plus staged snippet files in `.scaffold/staged/`. Phase-2 reads both and grafts the
+adopted snippets into generated code.
+
+If no reference repo is supplied, Phase-1.5 is skipped — Phase-2 proceeds without
+convention grafting.
+
+See `CONVENTION-SCAN.md` for full reference.
+
+11. **Phase-2 handoff.** Detect `<module>` tags in the tech-design doc.
+    If present, ask the user: *"Populate Domain/Persistence/API skeletons
+    from the tagged sections? (Phase-2, opt-in)"*. On yes, follow
+    `templates/csharp/scaffold-phase-2.md` exactly. On no or no tags,
+    stop here. See the "Phase-1 → Phase-2 handoff" section of
+    `templates/csharp/scaffold.md` for detection rules.
+
 ## Hard rules
 
 - Do not silently produce a scaffold for a stack with only a stub template.
@@ -79,6 +118,8 @@ docs + machine-enforced architectural rules + Claude-only hooks.
 - `AGENTS-MD-TEMPLATE.md`
 - `SEMGREP-RULE-COOKBOOK.md`
 - `templates/csharp/scaffold.md`
+- `templates/csharp/scaffold-phase-2.md`
+- `TECH-DESIGN-TAGS.md`
 - `hooks/pre-commit.sh`, `hooks/pre-push.sh`, `hooks/stop-neg-audit.sh`
 - `GRILL-LOOP.md`, `PREREQ-CHECK.md`, `FRONTMATTER-FORMAT.md`, `NEG-AUDIT.md`
 

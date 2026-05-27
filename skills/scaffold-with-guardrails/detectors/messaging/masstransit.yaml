@@ -1,0 +1,8 @@
+id: masstransit
+display: MassTransit bus configuration
+layer: messaging
+priority: 80
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddMassTransit\\s*\\("]
+extract: enclosing-method-or-extension

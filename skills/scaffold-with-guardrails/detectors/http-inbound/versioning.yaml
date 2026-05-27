@@ -1,0 +1,8 @@
+id: versioning
+display: API versioning
+layer: http-inbound
+priority: 50
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddApiVersioning\\s*\\("]
+extract: enclosing-method-or-extension

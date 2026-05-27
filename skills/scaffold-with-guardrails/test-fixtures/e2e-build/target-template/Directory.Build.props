@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <!-- Bug X6 gate: enforce code style during build and promote IDE0011
+         (braceless if) specifically to an error. This ensures grafted snippets
+         from braceless reference repos fail to build unless dotnet format
+         reconciles style post-graft. Scoped to IDE0011 only to avoid
+         promoting NuGet restore warnings (NU*) to errors. -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <WarningsAsErrors>IDE0011</WarningsAsErrors>
+  </PropertyGroup>
+</Project>

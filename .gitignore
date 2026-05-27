@@ -4,3 +4,10 @@
 
 # superpowers working dirs (specs, plans, etc.)
 docs/superpowers/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Playwright MCP artifacts (eval pack screenshots)
+.playwright-mcp/

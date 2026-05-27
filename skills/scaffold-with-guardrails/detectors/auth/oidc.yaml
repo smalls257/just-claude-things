@@ -1,0 +1,8 @@
+id: oidc
+display: OpenID Connect authentication
+layer: auth
+priority: 80
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddOpenIdConnect\\s*\\("]
+extract: enclosing-method-or-extension

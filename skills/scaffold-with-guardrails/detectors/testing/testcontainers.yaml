@@ -1,0 +1,8 @@
+id: testcontainers
+display: Testcontainers integration tests
+layer: testing
+priority: 60
+files: ["tests/**/*.cs", "test/**/*.cs"]
+signal:
+  cs: ["TestcontainersBuilder<", "new\\s+\\w*Container\\s*\\(", "\\bContainerBuilder\\(\\)\\s*\\.WithImage"]
+extract: enclosing-class

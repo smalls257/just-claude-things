@@ -1,0 +1,8 @@
+id: swagger-customization
+display: Swagger/OpenAPI customization
+layer: api-conventions
+priority: 50
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddSwaggerGen\\s*\\(", "SwaggerDoc\\s*\\("]
+extract: enclosing-method-or-extension

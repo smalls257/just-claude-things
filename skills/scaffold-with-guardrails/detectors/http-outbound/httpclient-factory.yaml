@@ -1,0 +1,8 @@
+id: httpclient-factory
+display: Typed HttpClient registration
+layer: http-outbound
+priority: 70
+files: ["src/**/*.cs"]
+signal:
+  cs: ["AddHttpClient<", "AddHttpClient\\s*\\(\\s*\""]
+extract: enclosing-method-or-extension

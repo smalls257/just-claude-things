@@ -1,0 +1,8 @@
+id: directory-packages-props
+display: Central Package Management
+layer: build
+priority: 80
+files: ["**/Directory.Packages.props"]
+signal:
+  props: ["<PackageVersion\\s+Include="]
+extract: props-property
